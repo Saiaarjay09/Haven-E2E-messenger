@@ -373,9 +373,9 @@ class GroupManager:
                 threading.Thread(
                     target=self._bg_connect_direct, args=(route["host"], route["tcp_port"]), daemon=True
                 ).start()
-            elif self.net.relay is not None:
+            elif route and route.get("relay_key"):
                 try:
-                    self.net.connect_relay(identity_pub, username_hint)
+                    self.net.connect_relay(identity_pub, username_hint, relay_key=route["relay_key"])
                 except ConnectionError:
                     pass
         self.net.send_when_ready(fp, text_json, kind="group")

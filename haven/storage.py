@@ -49,6 +49,8 @@ class Store:
                 identity_pub BLOB NOT NULL,
                 host TEXT,
                 port INTEGER,
+                relay_host TEXT,
+                relay_port INTEGER,
                 verified INTEGER NOT NULL DEFAULT 0,
                 added_at REAL NOT NULL
             );
@@ -85,23 +87,43 @@ class Store:
             """
         )
         self.conn.commit()
+        self._migrate_add_column("contacts", "relay_host", "TEXT")
+        self._migrate_add_column("contacts", "relay_port", "INTEGER")
+
+    def _migrate_add_column(self, table: str, column: str, sql_type: str) -> None:
+        """CREATE TABLE IF NOT EXISTS is a no-op on a table that already
+        exists from before this column was added, so a database created by
+        an earlier version of Haven needs this to actually gain the column."""
+        existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+            self.conn.commit()
 
     # -- contacts ----------------------------------------------------
 
     def upsert_contact(
-        self, fingerprint: str, username: str, identity_pub: bytes, host: str, port: int
+        self,
+        fingerprint: str,
+        username: str,
+        identity_pub: bytes,
+        host: str,
+        port: int,
+        relay_host: str | None = None,
+        relay_port: int | None = None,
     ) -> None:
         with self._lock:
             self.conn.execute(
                 """
-                INSERT INTO contacts (fingerprint, username, identity_pub, host, port, verified, added_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?)
+                INSERT INTO contacts (fingerprint, username, identity_pub, host, port, relay_host, relay_port, verified, added_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
                 ON CONFLICT(fingerprint) DO UPDATE SET
                     username=excluded.username,
                     host=CASE WHEN excluded.host != '' THEN excluded.host ELSE contacts.host END,
-                    port=CASE WHEN excluded.port != 0 THEN excluded.port ELSE contacts.port END
+                    port=CASE WHEN excluded.port != 0 THEN excluded.port ELSE contacts.port END,
+                    relay_host=CASE WHEN excluded.relay_host IS NOT NULL THEN excluded.relay_host ELSE contacts.relay_host END,
+                    relay_port=CASE WHEN excluded.relay_port IS NOT NULL THEN excluded.relay_port ELSE contacts.relay_port END
                 """,
-                (fingerprint, username, identity_pub, host, port, time.time()),
+                (fingerprint, username, identity_pub, host, port, relay_host, relay_port, time.time()),
             )
             self.conn.commit()
 
@@ -109,6 +131,17 @@ class Store:
         with self._lock:
             self.conn.execute(
                 "UPDATE contacts SET verified=? WHERE fingerprint=?", (int(verified), fingerprint)
+            )
+            self.conn.commit()
+
+    def set_contact_relay(self, fingerprint: str, relay_host: str | None, relay_port: int | None) -> None:
+        """Assign (or clear, if both args are None) which relay this
+        specific contact is reachable through — see haven/network.py's
+        multi-relay support."""
+        with self._lock:
+            self.conn.execute(
+                "UPDATE contacts SET relay_host=?, relay_port=? WHERE fingerprint=?",
+                (relay_host, relay_port, fingerprint),
             )
             self.conn.commit()
 

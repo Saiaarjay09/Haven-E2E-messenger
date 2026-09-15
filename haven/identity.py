@@ -114,24 +114,34 @@ def sign_in(username: str, password: str) -> Account:
 CONTACT_CARD_PREFIX = "haven1"
 
 
-def make_contact_card(account: Account) -> str:
+def make_contact_card(account: Account, relay_host: str | None = None, relay_port: int | None = None) -> str:
     """A contact card carries only public information (username + public
-    identity key) — safe to paste into any existing chat app, email, or
-    read aloud, the same way sharing a phone number is safe. It is NOT a
-    substitute for safety-number verification: it just bootstraps enough
-    to attempt a connection (directly on a shared LAN, or via a configured
-    relay). Verify the safety number afterwards, the same as any contact
-    discovered over LAN."""
-    return f"{CONTACT_CARD_PREFIX}:{account.username}:{account.identity.public_bytes.hex()}"
+    identity key, and optionally a relay address) — safe to paste into any
+    existing chat app, email, or read aloud, the same way sharing a phone
+    number is safe. It is NOT a substitute for safety-number verification:
+    it just bootstraps enough to attempt a connection (directly on a
+    shared LAN, or via the included relay). Verify the safety number
+    afterwards, the same as any contact discovered over LAN.
+
+    Including a relay means whoever adds you from this card automatically
+    remembers to reach you through that specific relay (see
+    config.py's multi-relay support) — handy when your friend group runs
+    its own relay and everyone's cards point at it."""
+    base = f"{CONTACT_CARD_PREFIX}:{account.username}:{account.identity.public_bytes.hex()}"
+    if relay_host and relay_port:
+        return f"{base}:{relay_host}:{relay_port}"
+    return base
 
 
 class InvalidContactCard(Exception):
     pass
 
 
-def parse_contact_card(card: str) -> tuple[str, bytes]:
+def parse_contact_card(card: str) -> tuple[str, bytes, str | None, int | None]:
+    """Returns (username, identity_pub, relay_host, relay_port) — the relay
+    fields are None for an older-style card with no relay embedded."""
     parts = card.strip().split(":")
-    if len(parts) != 3 or parts[0] != CONTACT_CARD_PREFIX:
+    if len(parts) not in (3, 5) or parts[0] != CONTACT_CARD_PREFIX:
         raise InvalidContactCard("not a valid Haven contact card")
     username, pub_hex = parts[1], parts[2]
     try:
@@ -140,4 +150,11 @@ def parse_contact_card(card: str) -> tuple[str, bytes]:
         raise InvalidContactCard("not a valid Haven contact card") from exc
     if len(pub) != 32:
         raise InvalidContactCard("not a valid Haven contact card")
-    return username, pub
+    if len(parts) == 5:
+        relay_host = parts[3]
+        try:
+            relay_port = int(parts[4])
+        except ValueError as exc:
+            raise InvalidContactCard("not a valid Haven contact card") from exc
+        return username, pub, relay_host, relay_port
+    return username, pub, None, None

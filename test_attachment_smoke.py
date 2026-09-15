@@ -32,6 +32,7 @@ identity.DATA_ROOT = tmp
 print("test data root:", tmp)
 
 RELAY_PORT = 18643
+RELAY_KEY = f"127.0.0.1:{RELAY_PORT}"
 relay = relay_server.RelayServer(port=RELAY_PORT, db_path=str(tmp / "relay.db"))
 threading.Thread(target=relay.start, daemon=True).start()
 time.sleep(0.3)
@@ -54,10 +55,14 @@ class Client:
         self.received = []  # (kind, text)
         self.net.on_message = self._on_message
         self.relay = relay_client.RelayClient(self.account.identity, username, "127.0.0.1", RELAY_PORT)
-        self.net.attach_relay(self.relay)
+        self.net.attach_relay(RELAY_KEY, self.relay)
         self.relay.start()
         self.group_mgr = groups.GroupManager(
-            self.net, self.store, self.account.identity, username, resolve_route=lambda _pub: None
+            self.net,
+            self.store,
+            self.account.identity,
+            username,
+            resolve_route=lambda _pub: {"relay_key": RELAY_KEY},
         )
 
     def _on_message(self, fingerprint, kind, text, sender_identity_pub):
@@ -79,7 +84,7 @@ assert wait_until(lambda: bob.relay.connected.is_set())
 print("alice and bob registered with the relay")
 
 # --- 1:1 DM: send an image ---
-fp = alice.net.connect_relay(bob.account.identity.public_bytes, "bob")
+fp = alice.net.connect_relay(bob.account.identity.public_bytes, "bob", relay_key=RELAY_KEY)
 image_payload = attachments.encode_attachment(IMG_PATH)
 assert wait_until(lambda: alice.net.is_connected(fp))
 alice.net.send_text(fp, image_payload, kind="image")

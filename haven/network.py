@@ -91,23 +91,31 @@ class NetworkManager:
         self.on_connect = None  # callback(PeerConnection) fired once per new/replaced connection
         self._stop = threading.Event()
 
-        self.relay = None  # RelayClient, set via attach_relay()
-        self._pending_relay_ephemeral: dict[str, crypto.KeyPair] = {}
+        self.relays: dict[str, object] = {}  # relay_key ("host:port") -> RelayClient
+        self._pending_relay_ephemeral: dict[str, tuple] = {}  # identity_pub_hex -> (my_ephemeral, relay_key)
 
-    # -- relay wiring --------------------------------------------------------
+    # -- relay wiring (supports several relays at once — see config.py's
+    # multi-relay support: different contacts can be reachable through
+    # different self-hosted relays) --------------------------------------
 
-    def attach_relay(self, relay_client) -> None:
-        self.relay = relay_client
-        self.relay.on_deliver = self._on_relay_frame
+    def attach_relay(self, relay_key: str, relay_client) -> None:
+        self.relays[relay_key] = relay_client
+        relay_client.on_deliver = lambda sender_hex, payload: self._on_relay_frame(relay_key, sender_hex, payload)
 
-    def connect_relay(self, identity_pub: bytes, username_hint: str = "") -> str:
+    def detach_relay(self, relay_key: str) -> None:
+        self.relays.pop(relay_key, None)
+
+    def connect_relay(self, identity_pub: bytes, username_hint: str = "", relay_key: str | None = None) -> str:
         """Kick off a relay-based handshake with a peer identified only by
         their public identity key (no host/port needed — the relay routes
-        by identity_pub). Returns the fingerprint immediately; the session
-        itself completes asynchronously once their hello_ack arrives,
-        possibly after they come back online."""
-        if self.relay is None:
-            raise ConnectionError("no relay configured")
+        by identity_pub) through the relay named by relay_key. Returns the
+        fingerprint immediately; the session itself completes asynchronously
+        once their hello_ack arrives, possibly after they come back online."""
+        if relay_key is None:
+            raise ConnectionError("no relay specified for this contact")
+        relay_client = self.relays.get(relay_key)
+        if relay_client is None:
+            raise ConnectionError(f"relay '{relay_key}' is not configured")
         fp = crypto.fingerprint(self.identity.public_bytes, identity_pub)
         with self._conn_lock:
             if fp in self.connections:
@@ -116,8 +124,8 @@ class NetworkManager:
             return fp  # handshake already in flight
 
         my_ephemeral = crypto.KeyPair.generate()
-        self._pending_relay_ephemeral[identity_pub.hex()] = my_ephemeral
-        sent = self.relay.send_to(
+        self._pending_relay_ephemeral[identity_pub.hex()] = (my_ephemeral, relay_key)
+        sent = relay_client.send_to(
             identity_pub,
             {
                 "type": "hello",
@@ -128,23 +136,26 @@ class NetworkManager:
         )
         if not sent:
             del self._pending_relay_ephemeral[identity_pub.hex()]
-            raise ConnectionError("relay is not currently connected")
+            raise ConnectionError(f"relay '{relay_key}' is not currently connected")
         return fp
 
-    def _on_relay_frame(self, sender_pub_hex: str, payload: dict) -> None:
+    def _on_relay_frame(self, relay_key: str, sender_pub_hex: str, payload: dict) -> None:
         sender_pub = bytes.fromhex(sender_pub_hex)
         ftype = payload.get("type")
         try:
             if ftype == "hello":
-                self._handle_relay_hello(sender_pub, payload)
+                self._handle_relay_hello(relay_key, sender_pub, payload)
             elif ftype == "hello_ack":
-                self._handle_relay_hello_ack(sender_pub, payload)
+                self._handle_relay_hello_ack(relay_key, sender_pub, payload)
             elif ftype == "msg":
                 self._handle_incoming_msg("relay", sender_pub, payload)
         except (KeyError, ValueError):
             pass  # malformed frame from a buggy/hostile peer — drop it
 
-    def _handle_relay_hello(self, their_identity_pub: bytes, hello: dict) -> None:
+    def _handle_relay_hello(self, relay_key: str, their_identity_pub: bytes, hello: dict) -> None:
+        relay_client = self.relays.get(relay_key)
+        if relay_client is None:
+            return  # relay was detached between the frame arriving and being handled
         their_ephemeral_pub = bytes.fromhex(hello["ephemeral_pub"])
         their_username = hello["username"]
         my_ephemeral = crypto.KeyPair.generate()
@@ -162,10 +173,10 @@ class NetworkManager:
             username=their_username,
             identity_pub=their_identity_pub,
             session=session,
-            relay=self.relay,
+            relay=relay_client,
         )
         self._register_connection(conn)
-        self.relay.send_to(
+        relay_client.send_to(
             their_identity_pub,
             {
                 "type": "hello_ack",
@@ -175,10 +186,14 @@ class NetworkManager:
             },
         )
 
-    def _handle_relay_hello_ack(self, their_identity_pub: bytes, ack: dict) -> None:
-        my_ephemeral = self._pending_relay_ephemeral.pop(their_identity_pub.hex(), None)
-        if my_ephemeral is None:
+    def _handle_relay_hello_ack(self, relay_key: str, their_identity_pub: bytes, ack: dict) -> None:
+        pending = self._pending_relay_ephemeral.pop(their_identity_pub.hex(), None)
+        if pending is None:
             return  # unexpected/duplicate ack — ignore
+        my_ephemeral, _expected_relay_key = pending
+        relay_client = self.relays.get(relay_key)
+        if relay_client is None:
+            return
         their_ephemeral_pub = bytes.fromhex(ack["ephemeral_pub"])
         their_username = ack["username"]
 
@@ -195,7 +210,7 @@ class NetworkManager:
             username=their_username,
             identity_pub=their_identity_pub,
             session=session,
-            relay=self.relay,
+            relay=relay_client,
         )
         self._register_connection(conn)
 

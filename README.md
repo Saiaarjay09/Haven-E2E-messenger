@@ -40,14 +40,18 @@ Click a name to open a chat.
    ```
    Make sure that port is reachable from your friends' networks (forward
    it on your router, or use a VPS with a public IP).
-2. In the Haven GUI, click **Relay settings…** and enter that machine's
-   address and port. Do this on every device that should be reachable
-   off-LAN, including your own.
+2. In the Haven GUI, click **Manage relays…** and add that machine's
+   address and port (give it a name, like "Home relay"). Do this on every
+   device that should be reachable off-LAN, including your own — you can
+   add more than one relay here (see "Multiple relays" below).
 3. Click **My contact card** to get a short string encoding your username
-   and public identity key (not secret — safe to paste anywhere). Send it
-   to a friend through any existing app (iMessage, email, in person).
-   They click **Add contact…** and paste it in.
-4. As long as both of you are connected to the same relay (or reachable
+   and public identity key (not secret — safe to paste anywhere), and
+   pick one of your configured relays to embed in it. Send the card to a
+   friend through any existing app (iMessage, email, in person). They
+   click **Add contact…** and paste it in — if the card includes a relay
+   they don't have configured yet, Haven offers to add and connect to it
+   for them automatically.
+4. As long as both of you are connected to that same relay (or reachable
    directly on a shared LAN), messages go through. If one of you is
    offline, the relay queues encrypted envelopes and delivers them the
    moment you reconnect — it never sees the plaintext, only that an
@@ -55,6 +59,20 @@ Click a name to open a chat.
 5. **Still verify the safety number** the same way you would for a LAN
    contact — a contact card only bootstraps a connection attempt, it
    doesn't prove nobody tampered with it in transit.
+
+### Multiple relays
+
+An account can be registered with several relays at once, and each
+contact remembers which specific one reaches them — useful if, say, one
+friend group runs its own relay and a different one runs theirs. A
+contact usually gets its relay automatically from whoever's card they
+were added with; to set or change it by hand, open that contact's DM and
+click **Assign relay…**. Reaching a contact only ever goes through their
+assigned relay — not any other relay you happen to also be connected to
+— so a friend who isn't registered on that particular relay stays
+unreachable through it, exactly as it should. See
+`test_multi_relay_smoke.py` for this verified with two live relay
+servers and three clients split across them.
 
 See `test_relay_smoke.py` for a fully scripted example of two clients
 talking purely through a relay, including one going offline mid-conversation.
@@ -187,6 +205,14 @@ in a fake key in the middle — the same trust model Signal uses.
   offline. It never sees plaintext or private key material — verified in
   `test_relay_smoke.py` by asserting the relay's own queue database never
   contains message text or key bytes.
+- **Multiple relays**: an account can register with several relays at
+  once, with each contact remembering which one specifically reaches
+  them (`config.py`, `haven/network.py`). Verified in
+  `test_multi_relay_smoke.py`: contact cards round-trip an embedded
+  relay, an old single-relay config migrates into the new list format,
+  and two contacts split across two live relays are each reachable only
+  through their own — reaching one through the wrong relay correctly
+  fails rather than silently working.
 - **Contact cards**: since off-LAN contacts can't be found by the UDP
   discovery beacon, "My contact card" / "Add contact…" let you bootstrap
   a connection with someone's public identity key shared through any
@@ -276,4 +302,5 @@ test_group_smoke.py        headless end-to-end test: group create/message/add/re
 test_attachment_smoke.py   headless end-to-end test: image/GIF round trip over DM + group
 test_call_smoke.py         headless end-to-end test: call signaling + audio/video chunk transport
 test_ai_smoke.py           headless end-to-end test: STT + translation + live captions + local LLM
+test_multi_relay_smoke.py  headless end-to-end test: per-contact relay assignment across two live relays
 ```

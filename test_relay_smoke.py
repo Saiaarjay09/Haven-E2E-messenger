@@ -20,6 +20,7 @@ identity.DATA_ROOT = tmp
 print("test data root:", tmp)
 
 RELAY_PORT = 18443
+RELAY_KEY = f"127.0.0.1:{RELAY_PORT}"
 relay_db = str(tmp / "relay.db")
 relay = relay_server.RelayServer(port=RELAY_PORT, db_path=relay_db)
 threading.Thread(target=relay.start, daemon=True).start()
@@ -40,7 +41,7 @@ alice_net.on_message = lambda fp, kind, text, sender_pub: received.setdefault("a
 bob_net.on_message = lambda fp, kind, text, sender_pub: received.setdefault("bob", []).append(text)
 
 alice_relay = relay_client.RelayClient(alice.identity, "alice", "127.0.0.1", RELAY_PORT)
-alice_net.attach_relay(alice_relay)
+alice_net.attach_relay(RELAY_KEY, alice_relay)
 alice_relay.start()
 
 fp = None
@@ -59,7 +60,7 @@ assert wait_until(lambda: alice_relay.connected.is_set()), "alice never connecte
 print("alice registered with relay")
 
 # --- Bob is NOT connected to the relay yet: this exercises offline queuing ---
-fp = alice_net.connect_relay(bob.identity.public_bytes, "bob")
+fp = alice_net.connect_relay(bob.identity.public_bytes, "bob", relay_key=RELAY_KEY)
 print("alice's view of the fingerprint (bob offline):", fp)
 
 # alice can't actually send yet since the handshake (hello) itself needs bob
@@ -72,7 +73,7 @@ print("confirmed: no session established yet (bob hasn't come online)")
 
 # --- Now bob comes online: relay should flush the queued hello to him ---
 bob_relay = relay_client.RelayClient(bob.identity, "bob", "127.0.0.1", RELAY_PORT)
-bob_net.attach_relay(bob_relay)
+bob_net.attach_relay(RELAY_KEY, bob_relay)
 bob_relay.start()
 assert wait_until(lambda: bob_relay.connected.is_set()), "bob never connected to relay"
 print("bob registered with relay (queued hello should now flush to him)")
@@ -95,7 +96,7 @@ assert "alice" not in received, "alice shouldn't have received anything while di
 print("confirmed: message queued at the relay while alice was offline")
 
 alice_relay2 = relay_client.RelayClient(alice.identity, "alice", "127.0.0.1", RELAY_PORT)
-alice_net.attach_relay(alice_relay2)
+alice_net.attach_relay(RELAY_KEY, alice_relay2)
 alice_relay2.start()
 assert wait_until(lambda: alice_relay2.connected.is_set())
 assert wait_until(lambda: received.get("alice") == ["you there? sent while you were offline"])

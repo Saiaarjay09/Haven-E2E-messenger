@@ -189,11 +189,12 @@ class ChatApp(ttk.Frame):
         self.event_queue: "queue.Queue" = queue.Queue()
         self.open_fingerprint: str | None = None
         self.open_group_id: str | None = None
-        self.peer_meta: dict[str, dict] = {}  # fingerprint -> {username, host, tcp_port, identity_pub}
+        self.peer_meta: dict[str, dict] = {}  # fingerprint -> {username, host, tcp_port, identity_pub, relay_key}
         self.pending_sends: dict[str, list[tuple[str, str]]] = {}  # fp -> [(text, kind), ...]
         self._link_counter = 0
-        self.relay: relay_client.RelayClient | None = None
-        self.relay_status_var = tk.StringVar(value="Relay: not configured")
+        self.relays: dict[str, relay_client.RelayClient] = {}  # relay_key ("host:port") -> client
+        self.relay_connected: dict[str, bool] = {}  # relay_key -> is currently connected
+        self.relay_status_var = tk.StringVar(value="Relays: none configured")
 
         self.group_mgr = groups.GroupManager(
             self.net, self.store, account.identity, account.username, resolve_route=self._resolve_route
@@ -228,50 +229,145 @@ class ChatApp(ttk.Frame):
     def _resolve_route(self, identity_pub_hex: str) -> dict | None:
         for meta in self.peer_meta.values():
             if meta.get("identity_pub") == identity_pub_hex:
-                return {"host": meta.get("host"), "tcp_port": meta.get("tcp_port")}
+                return {
+                    "host": meta.get("host"),
+                    "tcp_port": meta.get("tcp_port"),
+                    "relay_key": meta.get("relay_key"),
+                }
         return None
 
-    # -- relay (Phase 2) ------------------------------------------------------
+    # -- relays (Phase 2, multi-relay) -----------------------------------------
 
     def _maybe_start_relay(self):
-        cfg = config.load(self.account.data_dir)
-        host, port = cfg.get("relay_host"), cfg.get("relay_port")
-        if host and port:
-            self._start_relay(host, int(port))
+        for key, entry in config.list_relays(self.account.data_dir).items():
+            self._start_relay(key, entry["name"], entry["host"], entry["port"])
 
-    def _start_relay(self, host: str, port: int):
-        if self.relay is not None:
-            self.relay.stop()
-        self.relay = relay_client.RelayClient(self.account.identity, self.account.username, host, port)
-        self.relay.on_connection_change = self._on_relay_connection_threaded
-        self.net.attach_relay(self.relay)
-        self.relay.start()
-        self.relay_status_var.set(f"Relay: connecting to {host}:{port}…")
+    def _start_relay(self, key: str, name: str, host: str, port: int):
+        existing = self.relays.get(key)
+        if existing is not None:
+            existing.stop()
+        client = relay_client.RelayClient(self.account.identity, self.account.username, host, port)
+        client.on_connection_change = lambda connected: self._on_relay_connection_threaded(key, connected)
+        self.relays[key] = client
+        self.relay_connected[key] = False
+        self.net.attach_relay(key, client)
+        client.start()
+        self._update_relay_status_var()
 
-    def _on_relay_connection_threaded(self, connected: bool):
-        self.event_queue.put(("relay_status", None, connected))
+    def _stop_relay(self, key: str):
+        client = self.relays.pop(key, None)
+        self.relay_connected.pop(key, None)
+        self.net.detach_relay(key)
+        if client is not None:
+            client.stop()
+        self._update_relay_status_var()
+
+    def _update_relay_status_var(self):
+        if not self.relays:
+            self.relay_status_var.set("Relays: none configured")
+            return
+        connected = sum(1 for v in self.relay_connected.values() if v)
+        self.relay_status_var.set(f"Relays: {connected}/{len(self.relays)} connected")
+
+    def _on_relay_connection_threaded(self, relay_key: str, connected: bool):
+        self.event_queue.put(("relay_status", relay_key, connected))
 
     def _relay_settings(self):
-        cfg = config.load(self.account.data_dir)
-        host = simpledialog.askstring(
-            "Relay server",
-            "Relay server host (the machine you or a friend is self-hosting it on):",
-            initialvalue=cfg.get("relay_host", ""),
-        )
-        if host is None:
+        """'Manage relays…' — you can configure several self-hosted relays
+        (e.g. one your family uses, one a different friend group runs) and
+        each contact remembers which one reaches them (see 'Assign
+        relay…' on a contact, or embed one in your contact card)."""
+        top = tk.Toplevel(self)
+        top.title("Manage relays")
+        ttk.Label(top, text="Relays this account connects to:").pack(anchor="w", padx=12, pady=(12, 4))
+
+        listbox = tk.Listbox(top, width=50, height=6)
+        listbox.pack(padx=12, fill="both", expand=True)
+        keys = []
+
+        def refresh_list():
+            listbox.delete(0, "end")
+            keys.clear()
+            for key, entry in config.list_relays(self.account.data_dir).items():
+                status = "connected" if self.relay_connected.get(key) else "reconnecting…"
+                listbox.insert("end", f"{entry['name']}  ({key})  — {status}")
+                keys.append(key)
+
+        refresh_list()
+
+        def do_add():
+            name = simpledialog.askstring("Add relay", "A name for this relay (e.g. 'Home relay'):", parent=top)
+            if not name:
+                return
+            host = simpledialog.askstring(
+                "Add relay", "Relay host (the machine it's running on):", parent=top
+            )
+            if not host:
+                return
+            port_str = simpledialog.askstring("Add relay", "Relay port:", initialvalue="8443", parent=top)
+            if not port_str:
+                return
+            try:
+                port = int(port_str)
+            except ValueError:
+                messagebox.showerror("Invalid port", "Port must be a number.")
+                return
+            key = config.add_relay(self.account.data_dir, name, host, port)
+            self._start_relay(key, name, host, port)
+            refresh_list()
+
+        def do_remove():
+            sel = listbox.curselection()
+            if not sel:
+                return
+            key = keys[sel[0]]
+            if not messagebox.askyesno("Remove relay", "Remove this relay? Contacts assigned to it won't be reachable until you set them to a different one."):
+                return
+            self._stop_relay(key)
+            config.remove_relay(self.account.data_dir, key)
+            refresh_list()
+
+        btns = ttk.Frame(top)
+        btns.pack(pady=(4, 12))
+        ttk.Button(btns, text="Add relay…", command=do_add).pack(side="left", padx=4)
+        ttk.Button(btns, text="Remove selected", command=do_remove).pack(side="left", padx=4)
+
+    def _assign_relay_to_current(self):
+        """Pick which of your configured relays reaches the currently open
+        DM contact — remembered persistently, same as everything else about
+        a contact. A contact usually gets this automatically from a card
+        that embedded a relay; this is for setting/changing it by hand."""
+        fp = self.open_fingerprint
+        if not fp:
             return
-        port_str = simpledialog.askstring(
-            "Relay server", "Relay server port:", initialvalue=str(cfg.get("relay_port", 8443))
-        )
-        if not port_str:
+        relays = config.list_relays(self.account.data_dir)
+        if not relays:
+            messagebox.showinfo("No relays configured", "Add a relay first via 'Manage relays…'.")
             return
-        try:
-            port = int(port_str)
-        except ValueError:
-            messagebox.showerror("Invalid port", "Port must be a number.")
-            return
-        config.save(self.account.data_dir, {"relay_host": host, "relay_port": port})
-        self._start_relay(host, port)
+        meta = self.peer_meta.get(fp, {})
+        names = ["(none — LAN/direct only)"] + [f"{e['name']} ({k})" for k, e in relays.items()]
+        keys = [None] + list(relays.keys())
+        current_idx = keys.index(meta.get("relay_key")) if meta.get("relay_key") in keys else 0
+
+        top = tk.Toplevel(self)
+        top.title(f"Assign relay for {meta.get('username', fp[:8])}")
+        var = tk.StringVar(value=names[current_idx])
+        ttk.Label(top, text="Reach this contact through:").pack(padx=12, pady=(12, 4), anchor="w")
+        ttk.Combobox(top, textvariable=var, values=names, state="readonly", width=40).pack(padx=12, pady=(0, 8))
+
+        def do_save():
+            idx = names.index(var.get())
+            key = keys[idx]
+            if key:
+                relay_host, relay_port = relays[key]["host"], relays[key]["port"]
+            else:
+                relay_host, relay_port = None, None
+            self.store.set_contact_relay(fp, relay_host, relay_port)
+            self.peer_meta[fp]["relay_key"] = key
+            self._redraw_peer_list()
+            top.destroy()
+
+        ttk.Button(top, text="Save", command=do_save).pack(pady=(0, 12))
 
     def _ai_settings(self):
         cfg = config.load(self.account.data_dir)
@@ -367,31 +463,70 @@ class ChatApp(ttk.Frame):
         ttk.Button(top, text="Save", command=do_save).pack(pady=(4, 12))
 
     def _show_contact_card(self):
-        card = identity.make_contact_card(self.account)
+        relays = config.list_relays(self.account.data_dir)
         top = tk.Toplevel(self)
         top.title("My contact card")
+
+        relay_names = ["(no relay)"] + [f"{e['name']} ({k})" for k, e in relays.items()]
+        relay_keys = [None] + list(relays.keys())
+        relay_var = tk.StringVar(value=relay_names[0])
+
+        entry = ttk.Entry(top, width=60)
+
+        def rebuild_card():
+            idx = relay_names.index(relay_var.get())
+            key = relay_keys[idx]
+            if key:
+                entry_host, entry_port = relays[key]["host"], relays[key]["port"]
+                card = identity.make_contact_card(self.account, entry_host, entry_port)
+            else:
+                card = identity.make_contact_card(self.account)
+            entry.configure(state="normal")
+            entry.delete(0, "end")
+            entry.insert(0, card)
+            entry.configure(state="readonly")
+            entry.selection_range(0, "end")
+
         ttk.Label(
             top,
             text="Share this with a friend (over any existing app) so they can add you\n"
             "even when you're not on the same Wi-Fi/LAN:",
         ).pack(padx=12, pady=(12, 6))
-        entry = ttk.Entry(top, width=60)
-        entry.insert(0, card)
-        entry.configure(state="readonly")
+
+        if relays:
+            ttk.Label(top, text="Include a relay so they auto-connect through it:").pack(anchor="w", padx=12)
+            ttk.Combobox(top, textvariable=relay_var, values=relay_names, state="readonly", width=40).pack(
+                padx=12, pady=(2, 8)
+            )
+            relay_var.trace_add("write", lambda *a: rebuild_card())
+
         entry.pack(padx=12, pady=(0, 12))
-        entry.selection_range(0, "end")
+        rebuild_card()
 
     def _add_contact_by_card(self):
         card = simpledialog.askstring("Add contact", "Paste their contact card:")
         if not card:
             return
         try:
-            username, identity_pub = identity.parse_contact_card(card)
+            username, identity_pub, relay_host, relay_port = identity.parse_contact_card(card)
         except identity.InvalidContactCard as exc:
             messagebox.showerror("Invalid card", str(exc))
             return
         fp = crypto.fingerprint(self.account.identity.public_bytes, identity_pub)
-        self.store.upsert_contact(fp, username, identity_pub, "", 0)
+        relay_key = None
+        if relay_host and relay_port:
+            relay_key = config.relay_key(relay_host, relay_port)
+            if relay_key not in config.list_relays(self.account.data_dir):
+                if messagebox.askyesno(
+                    "Add their relay too?",
+                    f"This card includes a relay ({relay_host}:{relay_port}) you don't have configured yet. "
+                    "Add and connect to it now so you can reach them?",
+                ):
+                    config.add_relay(self.account.data_dir, f"{username}'s relay", relay_host, relay_port)
+                    self._start_relay(relay_key, f"{username}'s relay", relay_host, relay_port)
+                else:
+                    relay_key = None
+        self.store.upsert_contact(fp, username, identity_pub, "", 0, relay_host, relay_port)
         self.peer_meta[fp] = {
             "username": username,
             "host": "",
@@ -399,12 +534,13 @@ class ChatApp(ttk.Frame):
             "verified": False,
             "known": True,
             "identity_pub": identity_pub.hex(),
+            "relay_key": relay_key,
         }
         self._redraw_peer_list()
         messagebox.showinfo(
             "Contact added",
             f"Added {username}. They'll show up as reachable once you're both online "
-            "(same LAN, or both connected to a relay).",
+            "(same LAN, or both connected to their assigned relay).",
         )
 
     # -- layout ------------------------------------------------------------
@@ -424,7 +560,7 @@ class ChatApp(ttk.Frame):
         ttk.Button(top, text="Export backup…", command=self._export_backup).pack(
             side="right", padx=2
         )
-        ttk.Button(top, text="Relay settings…", command=self._relay_settings).pack(side="right", padx=2)
+        ttk.Button(top, text="Manage relays…", command=self._relay_settings).pack(side="right", padx=2)
         ttk.Button(top, text="Add contact…", command=self._add_contact_by_card).pack(side="right", padx=2)
         ttk.Button(top, text="My contact card", command=self._show_contact_card).pack(side="right", padx=2)
         ttk.Button(top, text="Create group…", command=self._create_group).pack(side="right", padx=2)
@@ -468,6 +604,10 @@ class ChatApp(ttk.Frame):
             header, text="📞 Call", command=lambda: self._start_call(video=False), state="disabled"
         )
         self.audio_call_btn.pack(side="right", padx=(0, 4))
+        self.assign_relay_btn = ttk.Button(
+            header, text="Assign relay…", command=self._assign_relay_to_current, state="disabled"
+        )
+        self.assign_relay_btn.pack(side="right", padx=(0, 4))
 
         self.chat_text = tk.Text(right, state="disabled", wrap="word", height=20)
         self.chat_text.pack(fill="both", expand=True, pady=6)
@@ -490,6 +630,9 @@ class ChatApp(ttk.Frame):
 
     def _refresh_contacts(self):
         for row in self.store.list_contacts():
+            relay_key = None
+            if row["relay_host"] and row["relay_port"]:
+                relay_key = config.relay_key(row["relay_host"], row["relay_port"])
             self.peer_meta[row["fingerprint"]] = {
                 "username": row["username"],
                 "host": row["host"],
@@ -497,6 +640,7 @@ class ChatApp(ttk.Frame):
                 "verified": bool(row["verified"]),
                 "known": True,
                 "identity_pub": row["identity_pub"].hex(),
+                "relay_key": relay_key,
             }
         self._redraw_peer_list()
 
@@ -568,6 +712,7 @@ class ChatApp(ttk.Frame):
         self.manage_members_btn.configure(state="disabled")
         self.audio_call_btn.configure(state="normal")
         self.video_call_btn.configure(state="normal")
+        self.assign_relay_btn.configure(state="normal")
 
         self.chat_text.configure(state="normal")
         self.chat_text.delete("1.0", "end")
@@ -587,10 +732,10 @@ class ChatApp(ttk.Frame):
 
     def _attempt_connect(self, fingerprint: str):
         """Try direct LAN first if we have a live address for this contact;
-        otherwise fall back to the relay if one's configured and we know
-        their identity_pub (from discovery, a contact card, or a prior
-        session). Safe to call repeatedly — connect_to_peer/connect_relay
-        both no-op if already connected or already mid-handshake."""
+        otherwise fall back to whichever relay THIS contact is assigned to
+        (from their contact card, or set via 'Assign relay…'). Safe to call
+        repeatedly — connect_to_peer/connect_relay both no-op if already
+        connected or already mid-handshake."""
         meta = self.peer_meta.get(fingerprint, {})
         if meta.get("host") and meta.get("tcp_port"):
             threading.Thread(
@@ -599,11 +744,23 @@ class ChatApp(ttk.Frame):
                 daemon=True,
             ).start()
             return
-        if meta.get("identity_pub") and self.relay is not None and self.relay.connected.is_set():
+        relay_key = meta.get("relay_key")
+        relay = self.relays.get(relay_key) if relay_key else None
+        if meta.get("identity_pub") and relay is not None and relay.connected.is_set():
             try:
-                self.net.connect_relay(bytes.fromhex(meta["identity_pub"]), meta.get("username", ""))
+                self.net.connect_relay(bytes.fromhex(meta["identity_pub"]), meta.get("username", ""), relay_key=relay_key)
             except ConnectionError as exc:
                 self.event_queue.put(("sys", fingerprint, f"Could not reach relay: {exc}"))
+            return
+        if meta.get("identity_pub") and relay_key and relay is None:
+            self.event_queue.put(
+                ("sys", fingerprint, f"This contact's relay ({relay_key}) isn't configured on this account.")
+            )
+            return
+        if meta.get("identity_pub") and not relay_key and self.relays:
+            self.event_queue.put(
+                ("sys", fingerprint, "No relay assigned to this contact yet — use 'Assign relay…' to pick one.")
+            )
             return
         self.event_queue.put(
             ("sys", fingerprint, "No route to this contact yet (not on your LAN, and no relay connected).")
@@ -920,6 +1077,7 @@ class ChatApp(ttk.Frame):
         self.manage_members_btn.configure(state="disabled" if info["removed"] else "normal")
         self.audio_call_btn.configure(state="disabled")
         self.video_call_btn.configure(state="disabled")
+        self.assign_relay_btn.configure(state="disabled")
 
         self.chat_text.configure(state="normal")
         self.chat_text.delete("1.0", "end")
@@ -1003,10 +1161,26 @@ class ChatApp(ttk.Frame):
             if not card:
                 return
             try:
-                uname, pub = identity.parse_contact_card(card)
+                uname, pub, relay_host, relay_port = identity.parse_contact_card(card)
             except identity.InvalidContactCard as exc:
                 messagebox.showerror("Invalid card", str(exc))
                 return
+            if relay_host and relay_port:
+                relay_key = config.relay_key(relay_host, relay_port)
+                if relay_key not in config.list_relays(self.account.data_dir):
+                    if messagebox.askyesno(
+                        "Add their relay too?",
+                        f"This card includes a relay ({relay_host}:{relay_port}) you don't have configured yet. "
+                        "Add and connect to it now so you can reach them?",
+                    ):
+                        config.add_relay(self.account.data_dir, f"{uname}'s relay", relay_host, relay_port)
+                        self._start_relay(relay_key, f"{uname}'s relay", relay_host, relay_port)
+                    else:
+                        relay_key = None
+                fp = crypto.fingerprint(self.account.identity.public_bytes, pub)
+                self.store.set_contact_relay(fp, relay_host, relay_port)
+                self.peer_meta.setdefault(fp, {"username": uname, "identity_pub": pub.hex(), "verified": False})
+                self.peer_meta[fp]["relay_key"] = relay_key
             self.group_mgr.add_member(group_id, uname, pub)
             top.destroy()
             self._redraw_current_chat()
@@ -1227,8 +1401,9 @@ class ChatApp(ttk.Frame):
                     self._redraw_peer_list()
                     self._flush_pending(fp, attempts_left=0)
                 elif kind == "relay_status":
-                    connected = payload
-                    self.relay_status_var.set("Relay: connected" if connected else "Relay: reconnecting…")
+                    relay_key, connected = fp, payload
+                    self.relay_connected[relay_key] = connected
+                    self._update_relay_status_var()
                     self._redraw_peer_list()
                 elif kind in ("status", "sys"):
                     self._redraw_peer_list()
@@ -1329,8 +1504,8 @@ class ChatApp(ttk.Frame):
         for fp in list(self.call_mgr.calls.keys()):
             self.call_mgr.hangup(fp)
         self.disc.stop()
-        if self.relay is not None:
-            self.relay.stop()
+        for client in self.relays.values():
+            client.stop()
         self.net.stop()
         self.store.close()
 

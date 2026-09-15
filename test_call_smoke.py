@@ -41,6 +41,7 @@ identity.DATA_ROOT = tmp
 print("test data root:", tmp)
 
 RELAY_PORT = 18743
+RELAY_KEY = f"127.0.0.1:{RELAY_PORT}"
 relay = relay_server.RelayServer(port=RELAY_PORT, db_path=str(tmp / "relay.db"))
 threading.Thread(target=relay.start, daemon=True).start()
 time.sleep(0.3)
@@ -62,7 +63,7 @@ class Client:
         self.net = network.NetworkManager(self.account.identity, username, self.store)
         self.net.on_message = self._on_message
         self.relay = relay_client.RelayClient(self.account.identity, username, "127.0.0.1", RELAY_PORT)
-        self.net.attach_relay(self.relay)
+        self.net.attach_relay(RELAY_KEY, self.relay)
         self.relay.start()
         self.call_mgr = calls.CallManager(self.net, self.account.identity, username)
         self.states = []
@@ -85,7 +86,7 @@ bob = Client("bob", "bob-password-456")
 assert wait_until(lambda: alice.relay.connected.is_set())
 assert wait_until(lambda: bob.relay.connected.is_set())
 
-fp = alice.net.connect_relay(bob.account.identity.public_bytes, "bob")
+fp = alice.net.connect_relay(bob.account.identity.public_bytes, "bob", relay_key=RELAY_KEY)
 assert wait_until(lambda: alice.net.is_connected(fp))
 print("alice and bob connected via relay")
 

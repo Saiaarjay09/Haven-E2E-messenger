@@ -24,6 +24,16 @@ order, the moment that contact reconnects. Contact cards (`My contact
 card` / `Add contact…` in the GUI) bootstrap adding someone you're not on
 a LAN with, since UDP discovery obviously can't find them.
 
+**Later extension — multiple relays**: an account can register with
+several relays at once (`NetworkManager.attach_relay(key, client)` keyed
+by "host:port"), and each contact remembers which specific relay reaches
+them (`storage.py`'s `relay_host`/`relay_port` columns, set via a
+contact's card or "Assign relay…"). Reaching a contact only ever goes
+through their own assigned relay, never any other relay you also happen
+to be connected to — verified in `test_multi_relay_smoke.py` with two
+live relays and contacts split across them, including confirming that
+the wrong relay correctly fails rather than silently working.
+
 Known gaps to pick up later, not blocking Phase 3: the relay is a single
 process with no redundancy or horizontal scaling; a lost delivery
 acknowledgment causes a dropped (not duplicated) message on reconnect

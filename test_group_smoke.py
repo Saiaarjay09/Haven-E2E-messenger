@@ -21,6 +21,7 @@ identity.DATA_ROOT = tmp
 print("test data root:", tmp)
 
 RELAY_PORT = 18543
+RELAY_KEY = f"127.0.0.1:{RELAY_PORT}"
 relay = relay_server.RelayServer(port=RELAY_PORT, db_path=str(tmp / "relay.db"))
 threading.Thread(target=relay.start, daemon=True).start()
 time.sleep(0.3)
@@ -43,10 +44,14 @@ class Client:
         self.received = []
         self.net.on_message = self._on_message
         self.relay = relay_client.RelayClient(self.account.identity, username, "127.0.0.1", RELAY_PORT)
-        self.net.attach_relay(self.relay)
+        self.net.attach_relay(RELAY_KEY, self.relay)
         self.relay.start()
         self.group_mgr = groups.GroupManager(
-            self.net, self.store, self.account.identity, username, resolve_route=lambda _pub: None
+            self.net,
+            self.store,
+            self.account.identity,
+            username,
+            resolve_route=lambda _pub: {"relay_key": RELAY_KEY},
         )
 
     def _on_message(self, fingerprint, kind, text, sender_identity_pub):
