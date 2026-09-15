@@ -1,0 +1,14 @@
+[Unit]
+Description=Haven relay server
+After=network.target
+
+[Service]
+# Adjust these two paths for where you cloned Haven and which Python to use.
+WorkingDirectory=/opt/haven
+ExecStart=/usr/bin/python3 -m haven.relay_server --port 8443 --db /opt/haven/relay.db
+Restart=always
+RestartSec=5
+User=haven
+
+[Install]
+WantedBy=multi-user.target

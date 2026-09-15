@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haven.relay</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>-m</string>
+        <string>haven.relay_server</string>
+        <string>--port</string>
+        <string>8443</string>
+        <string>--db</string>
+        <!-- Adjust this path to wherever you cloned Haven -->
+        <string>/Users/YOURNAME/Developer/haven/relay.db</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/YOURNAME/Developer/haven</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/haven-relay.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/haven-relay.err</string>
+</dict>
+</plist>

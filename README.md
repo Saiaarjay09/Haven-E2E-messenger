@@ -59,6 +59,35 @@ Click a name to open a chat.
 See `test_relay_smoke.py` for a fully scripted example of two clients
 talking purely through a relay, including one going offline mid-conversation.
 
+### Reaching friends in other countries
+
+This needs no code changes — the relay is plain TCP over the ordinary
+internet (it binds `0.0.0.0`, not just localhost), so it doesn't care
+where either side is. What matters is hosting it somewhere with a public
+address:
+
+- **Easiest**: a cheap VPS (DigitalOcean, Linode, Oracle Cloud's free
+  tier, AWS Lightsail — a few dollars a month or free). It already has a
+  public IP, so there's no router configuration needed.
+- **Free but more setup**: run it on a home computer or Raspberry Pi,
+  forward the port on your router, and use a dynamic DNS service (like
+  DuckDNS or No-IP) since home internet IPs usually change over time.
+
+Either way, keep it running persistently rather than only while a
+terminal window happens to be open — `deploy/haven-relay.service` is a
+systemd unit for a Linux VPS, and `deploy/com.haven.relay.plist` is a
+launchd config for keeping it running on a Mac. Both auto-restart if the
+process crashes and start on boot.
+
+Two things that specifically affect international reach:
+- **Restrictive networks/countries sometimes block non-standard ports.**
+  If a friend somewhere can't connect, try re-running the relay on port
+  `443` — traffic on that port is rarely blocked since it looks like
+  ordinary HTTPS.
+- **Latency scales with distance** (it's still real TCP round-trips
+  across the actual physical distance), which shows up as slightly
+  delayed calls, not broken text/group messaging.
+
 ## Group chats (Phase 3)
 
 Click **Create group…**, name it, and pick from your known contacts
