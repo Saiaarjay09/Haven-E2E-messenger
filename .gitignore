@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local account data, downloaded AI models, and relay databases never
+# belong in the repo — they're per-machine state, not source.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.gguf
+*.havenbackup

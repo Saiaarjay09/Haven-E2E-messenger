@@ -1,0 +1,18 @@
+# Core (Phase 1): identity keys, ratchet encryption, backups
+cryptography
+
+# GUI images/avatars (Phase 1) and attachments (Phase 4)
+pillow
+
+# Voice/video calls (Phase 5)
+sounddevice
+numpy
+opencv-python-headless
+
+# On-device AI (Phase 6) — everything below runs locally, no cloud calls.
+# First use of each downloads its own model file once (see README.md);
+# after that, all inference is fully offline.
+faster-whisper
+argostranslate
+llama-cpp-python
+certifi
