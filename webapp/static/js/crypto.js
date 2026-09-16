@@ -83,18 +83,143 @@ const Haven = (() => {
   // Identity keys (X25519)
   // ---------------------------------------------------------------------
 
-  // X25519 PKCS8 wrapping: a fixed 16-byte ASN.1 DER prefix (constant
-  // because X25519 keys are always exactly 32 bytes, so there's no
-  // variable-length encoding involved) followed by the raw scalar. This
-  // is the standard trick for round-tripping a raw X25519 private key
-  // through WebCrypto, which only accepts private keys via importKey in
-  // "pkcs8" or "jwk" form, never "raw" (raw import/export IS supported
-  // for the public half).
-  const X25519_PKCS8_PREFIX = hexToBytes("302e020100300506032b656e04220420");
+  // X25519 private keys round-trip through WebCrypto via JWK (RFC 8037's
+  // OKP representation: "d" is simply the raw 32-byte scalar, base64url
+  // encoded — no ASN.1/DER structure to get right). An earlier version of
+  // this file instead hand-assembled a PKCS8 DER wrapper around a
+  // hardcoded byte prefix, which happened to match Chromium's own PKCS8
+  // encoding but is not something the WebCrypto spec guarantees is
+  // identical across browser engines.
+  //
+  // RFC 8037 §2 makes the JWK "x" (public key) field REQUIRED even when
+  // importing a private key, and browsers enforce this: they reject a JWK
+  // with "d" but no "x", and — verified directly — reject a JWK where "x"
+  // doesn't actually correspond to "d" (a mismatched/dummy "x" throws
+  // DataError too). So reconstructing a key pair from just a stored raw
+  // private scalar (e.g. after loading an identity from encrypted local
+  // storage, or restoring one from a recovery phrase) needs the real
+  // public key computed independently first — WebCrypto has no "give me
+  // the public key for this private scalar" operation on its own. This is
+  // a plain X25519 scalar multiplication against the curve's base point
+  // (RFC 7748 §5, Montgomery ladder), verified byte-for-byte against
+  // haven/crypto.py's own key derivation via test_vectors.json.
+  const X25519_P = (1n << 255n) - 19n;
+  const X25519_A24 = 121665n;
+  const X25519_BASE_U = (() => {
+    const u = new Uint8Array(32);
+    u[0] = 9;
+    return u;
+  })();
 
-  async function importX25519PrivateKeyRaw(rawPriv) {
-    const pkcs8 = concatBytes(X25519_PKCS8_PREFIX, rawPriv);
-    return crypto.subtle.importKey("pkcs8", pkcs8, { name: "X25519" }, true, ["deriveBits"]);
+  function leBytesToBigInt(bytes) {
+    let result = 0n;
+    for (let i = bytes.length - 1; i >= 0; i--) result = (result << 8n) | BigInt(bytes[i]);
+    return result;
+  }
+
+  function bigIntToLeBytes(num, len) {
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      out[i] = Number(num & 0xffn);
+      num >>= 8n;
+    }
+    return out;
+  }
+
+  function modPow(base, exp, mod) {
+    base = ((base % mod) + mod) % mod;
+    let result = 1n;
+    while (exp > 0n) {
+      if (exp & 1n) result = (result * base) % mod;
+      exp >>= 1n;
+      base = (base * base) % mod;
+    }
+    return result;
+  }
+
+  function modInv(a, mod) {
+    return modPow(a, mod - 2n, mod);
+  }
+
+  function clampX25519Scalar(bytes) {
+    const k = bytes.slice();
+    k[0] &= 248;
+    k[31] &= 127;
+    k[31] |= 64;
+    return k;
+  }
+
+  function x25519ScalarMult(scalarBytes, uBytes) {
+    const k = leBytesToBigInt(clampX25519Scalar(scalarBytes));
+    const u = leBytesToBigInt(uBytes) % X25519_P;
+    const x1 = u;
+    let x2 = 1n,
+      z2 = 0n,
+      x3 = u,
+      z3 = 1n,
+      swap = 0n;
+    for (let t = 254; t >= 0; t--) {
+      const kt = (k >> BigInt(t)) & 1n;
+      swap ^= kt;
+      if (swap === 1n) {
+        [x2, x3] = [x3, x2];
+        [z2, z3] = [z3, z2];
+      }
+      swap = kt;
+      const A = (x2 + z2) % X25519_P;
+      const AA = (A * A) % X25519_P;
+      const B = (x2 - z2 + X25519_P) % X25519_P;
+      const BB = (B * B) % X25519_P;
+      const E = (AA - BB + X25519_P) % X25519_P;
+      const C = (x3 + z3) % X25519_P;
+      const D = (x3 - z3 + X25519_P) % X25519_P;
+      const DA = (D * A) % X25519_P;
+      const CB = (C * B) % X25519_P;
+      x3 = (DA + CB) % X25519_P;
+      x3 = (x3 * x3) % X25519_P;
+      z3 = (DA - CB + X25519_P) % X25519_P;
+      z3 = (z3 * z3) % X25519_P;
+      z3 = (z3 * x1) % X25519_P;
+      x2 = (AA * BB) % X25519_P;
+      z2 = (E * ((AA + X25519_A24 * E) % X25519_P)) % X25519_P;
+    }
+    if (swap === 1n) {
+      [x2, x3] = [x3, x2];
+      [z2, z3] = [z3, z2];
+    }
+    const result = (x2 * modInv(z2, X25519_P)) % X25519_P;
+    return bigIntToLeBytes(result, 32);
+  }
+
+  function x25519PublicFromPrivate(privateBytes) {
+    return x25519ScalarMult(privateBytes, X25519_BASE_U);
+  }
+
+  function bytesToBase64Url(bytes) {
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function base64UrlToBytes(b64url) {
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64url.length / 4) * 4, "=");
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function importX25519PrivateKeyRaw(rawPriv, rawPub) {
+    const publicBytes = rawPub || x25519PublicFromPrivate(rawPriv);
+    const jwk = {
+      kty: "OKP",
+      crv: "X25519",
+      d: bytesToBase64Url(rawPriv),
+      x: bytesToBase64Url(publicBytes),
+      key_ops: ["deriveBits"],
+      ext: true,
+    };
+    return crypto.subtle.importKey("jwk", jwk, { name: "X25519" }, true, ["deriveBits"]);
   }
 
   async function importX25519PublicKeyRaw(rawPub) {
@@ -104,28 +229,16 @@ const Haven = (() => {
   async function generateKeyPair() {
     const pair = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
     const publicBytes = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
-    const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
-    const privateBytes = pkcs8.slice(X25519_PKCS8_PREFIX.length); // strip the fixed prefix back off
+    const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+    const privateBytes = base64UrlToBytes(jwk.d);
     return { privateKey: pair.privateKey, publicKey: pair.publicKey, privateBytes, publicBytes };
   }
 
   async function keyPairFromPrivateBytes(privateBytes) {
-    const privateKey = await importX25519PrivateKeyRaw(privateBytes);
-    // WebCrypto doesn't directly expose "derive the public key from this
-    // private key", but JWK export does — its "x" field is the raw public
-    // key, base64url-encoded. Re-import that as a usable public CryptoKey.
-    const jwk = await crypto.subtle.exportKey("jwk", privateKey);
-    const publicBytes = base64UrlToBytes(jwk.x);
+    const publicBytes = x25519PublicFromPrivate(privateBytes);
+    const privateKey = await importX25519PrivateKeyRaw(privateBytes, publicBytes);
     const publicKey = await importX25519PublicKeyRaw(publicBytes);
     return { privateKey, publicKey, privateBytes, publicBytes };
-  }
-
-  function base64UrlToBytes(b64url) {
-    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64url.length / 4) * 4, "=");
-    const bin = atob(b64);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
   }
 
   async function dh(myPrivateKey, theirPublicBytes) {
