@@ -107,10 +107,10 @@ const HavenStorage = (() => {
       );
     }
 
-    async saveMessage(fingerprint, direction, plaintext, kind = "text") {
+    async saveMessage(fingerprint, direction, plaintext, kind = "text", timestamp = Date.now()) {
       const blob = await H.encryptAuthenticated(this.storageKey, H.utf8(plaintext), H.utf8(fingerprint));
       await tx(this.db, "messages", "readwrite", (store) => {
-        store.add({ fingerprint, direction, kind, blobHex: H.bytesToHex(blob), timestamp: Date.now() });
+        store.add({ fingerprint, direction, kind, blobHex: H.bytesToHex(blob), timestamp });
       });
     }
 
@@ -122,6 +122,20 @@ const HavenStorage = (() => {
       for (const row of rows) {
         const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(fingerprint));
         out.push({ direction: row.direction, kind: row.kind, text: H.fromUtf8(plaintext), ts: row.timestamp });
+      }
+      return out;
+    }
+
+    // Every message across every contact, decrypted — used only for
+    // building a full-account backup (see backup.js), not the normal
+    // per-chat history() path above.
+    async listAllMessages() {
+      const t = this.db.transaction("messages", "readonly");
+      const rows = await reqToPromise(t.objectStore("messages").getAll());
+      const out = [];
+      for (const row of rows) {
+        const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(row.fingerprint));
+        out.push({ fingerprint: row.fingerprint, direction: row.direction, kind: row.kind, text: H.fromUtf8(plaintext), ts: row.timestamp });
       }
       return out;
     }

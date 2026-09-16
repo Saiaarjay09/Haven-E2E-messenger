@@ -59,7 +59,11 @@
     <button id="login-btn">Log in</button>
     <button id="signup-btn">Create account</button>
   </div>
-  <p style="margin-top:10px;"><a href="#" id="forgot-password-link" style="font-size:13px;">Forgot password?</a></p>
+  <p style="margin-top:10px;">
+    <a href="#" id="forgot-password-link" style="font-size:13px;">Forgot password?</a>
+    &nbsp;·&nbsp;
+    <a href="#" id="restore-backup-link" style="font-size:13px;">Restore from backup file…</a>
+  </p>
   <div id="login-status"></div>
 
   <div id="forgot-password-row" hidden>
@@ -73,6 +77,21 @@
     <div>
       <button id="reset-password-btn">Reset password</button>
       <button id="forgot-password-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <div id="restore-backup-row" hidden>
+    <hr>
+    <p style="font-size:13px;color:#555;">Restore your contacts and message history from a backup file
+    downloaded earlier (see "Backup…" once logged in). This works entirely offline and doesn't touch
+    your account password — use "Forgot password?" separately if you also need that.</p>
+    <label>Backup file</label>
+    <input id="restore-backup-file" type="file">
+    <label>Backup password</label>
+    <input id="restore-backup-password" type="password">
+    <div>
+      <button id="restore-backup-confirm">Restore</button>
+      <button id="restore-backup-cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -95,6 +114,12 @@
         <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
       </div>
       <button id="my-card-btn">My contact card</button>
+      <div id="backup-row" hidden>
+        <input id="backup-password" type="password" placeholder="Choose a backup password" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+        <button id="backup-confirm">Download backup</button>
+        <button id="backup-cancel">Cancel</button>
+      </div>
+      <button id="backup-btn">Backup…</button>
     </div>
   </div>
   <div id="chat-area">
@@ -126,10 +151,11 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=6"></script>
-<script src="js/storage.js?v=6"></script>
-<script src="js/network.js?v=6"></script>
-<script src="js/auth.js?v=6"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/crypto.js?v=7"></script>
+<script src="js/storage.js?v=7"></script>
+<script src="js/network.js?v=7"></script>
+<script src="js/auth.js?v=7"></script>
+<script src="js/backup.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>

@@ -166,6 +166,23 @@ your contact sees, verify it, and chat. Verified two ways:
   received message survives a full page reload (recovered from
   encrypted IndexedDB storage, not just in-memory state).
 
+Chat history lives in IndexedDB, scoped per-account (`haven-<username>`)
+and per-browser — it's never sent to any server, which also means it
+doesn't follow you to a different browser or device on its own. `backup.js`
+covers that: "Backup…" once logged in exports your identity key, contacts,
+and full message history as a single password-protected `.havenbackup`
+file (`HAVEN-BACKUP-V1`), using the exact same format as the desktop app's
+`haven/backup.py` — same scrypt-derived key, same deniable AES-CTR cipher,
+so a file exported here should restore on the desktop app and vice versa.
+"Restore from backup file…" on the login screen reverses this entirely
+offline, without contacting the accounts server at all: it decrypts the
+file locally and writes straight into a fresh IndexedDB store for that
+username, then connects to the relay directly with the recovered identity.
+Verified live: exported a real account's backup, deleted its IndexedDB
+database entirely (simulating a brand new device), and confirmed restoring
+from the file recovered the identical identity (same safety number), the
+same contact, and the same message history.
+
 ## What's NOT built yet (Phase 7e and beyond)
 
 - **Groups, calls, rich content, on-device AI in-browser.** Each is a

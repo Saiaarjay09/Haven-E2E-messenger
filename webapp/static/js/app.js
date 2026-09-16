@@ -106,6 +106,64 @@
     }
   }
 
+  function openRestoreBackup() {
+    el("restore-backup-row").hidden = false;
+    el("restore-backup-file").value = "";
+    el("restore-backup-password").value = "";
+  }
+
+  async function doRestoreBackup() {
+    const fileInput = el("restore-backup-file");
+    const password = el("restore-backup-password").value;
+    if (!fileInput.files.length || !password) {
+      return setStatus("Choose a backup file and enter its password.");
+    }
+    try {
+      const fileBytes = new Uint8Array(await fileInput.files[0].arrayBuffer());
+      const bundle = await HavenBackup.restoreBackup(fileBytes, password);
+      const identity = await H.keyPairFromPrivateBytes(H.hexToBytes(bundle.identity_private_key));
+      const store = await HavenStorage.Store.open(bundle.username, identity.privateBytes);
+      for (const c of bundle.contacts) {
+        await store.upsertContact(c.fingerprint, c.username, c.identity_pub, c.verified);
+      }
+      for (const m of bundle.messages) {
+        await store.saveMessage(m.fingerprint, m.direction, m.text, m.kind, m.ts);
+      }
+      el("restore-backup-row").hidden = true;
+      setStatus("");
+      await onLoggedIn(identity, bundle.username);
+    } catch (e) {
+      console.error("restore backup failed:", e);
+      setStatus(e.message);
+    }
+  }
+
+  function openBackup() {
+    el("backup-row").hidden = false;
+    el("backup-password").value = "";
+  }
+
+  async function doBackup() {
+    const password = el("backup-password").value;
+    if (!password) return;
+    try {
+      const bytes = await HavenBackup.exportBackup(state.identity, state.username, state.store, password);
+      const blob = new Blob([bytes], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${state.username}.havenbackup`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      el("backup-row").hidden = true;
+    } catch (e) {
+      console.error("backup export failed:", e);
+      appendLine("sys", "Backup failed: " + e.message);
+    }
+  }
+
   async function onLoggedIn(identity, username) {
     state.identity = identity;
     state.username = username;
@@ -266,6 +324,12 @@
     };
     el("forgot-password-cancel").onclick = () => (el("forgot-password-row").hidden = true);
     el("reset-password-btn").onclick = doResetPassword;
+    el("restore-backup-link").onclick = (e) => {
+      e.preventDefault();
+      openRestoreBackup();
+    };
+    el("restore-backup-cancel").onclick = () => (el("restore-backup-row").hidden = true);
+    el("restore-backup-confirm").onclick = doRestoreBackup;
     el("send-btn").onclick = sendMessage;
     el("message-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
@@ -277,5 +341,8 @@
       if (e.key === "Enter") confirmAddContact();
     });
     el("my-card-btn").onclick = toggleMyCard;
+    el("backup-btn").onclick = openBackup;
+    el("backup-cancel").onclick = () => (el("backup-row").hidden = true);
+    el("backup-confirm").onclick = doBackup;
   });
 })();
