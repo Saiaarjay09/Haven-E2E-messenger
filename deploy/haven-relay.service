@@ -4,8 +4,10 @@ After=network.target
 
 [Service]
 # Adjust these two paths for where you cloned Haven and which Python to use.
+# --ws-port enables the WebSocket transport the web client (webapp/) needs;
+# leave it off (or pass --ws-port 0) if you only need desktop clients.
 WorkingDirectory=/opt/haven
-ExecStart=/usr/bin/python3 -m haven.relay_server --port 8443 --db /opt/haven/relay.db
+ExecStart=/usr/bin/python3 -m haven.relay_server --port 8443 --ws-port 8444 --db /opt/haven/relay.db
 Restart=always
 RestartSec=5
 User=haven

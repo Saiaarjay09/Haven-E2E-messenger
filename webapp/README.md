@@ -7,6 +7,11 @@ and sign up on, no install needed" is a genuinely different trust model,
 not just a different UI — this document explains exactly what changes,
 what's built so far, and what's still ahead.
 
+**Want to actually put this live so a friend can use it?** See
+`WEB_DEPLOYMENT.md` at the repo root for step-by-step hosting
+instructions. This document is about the design and tradeoffs; that one
+is about running the three processes involved.
+
 ## The tradeoff this accepts, stated plainly
 
 A native app's code is fixed the moment you install it — you (or anyone)

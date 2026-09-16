@@ -1,0 +1,17 @@
+[Unit]
+Description=Haven web accounts service
+After=network.target
+
+[Service]
+# Adjust these paths for where you cloned Haven, which Python to use, and
+# where the account database (usernames + auth hashes + encrypted blobs
+# the server can't decrypt) should live.
+WorkingDirectory=/opt/haven
+Environment=HAVEN_ACCOUNTS_DB=/opt/haven/haven_accounts.db
+ExecStart=/usr/bin/python3 -m uvicorn webapp.accounts_server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+User=haven
+
+[Install]
+WantedBy=multi-user.target
