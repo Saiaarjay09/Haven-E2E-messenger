@@ -10,3 +10,4 @@ __pycache__/
 *.db-shm
 *.gguf
 *.havenbackup
+bin/

@@ -3,21 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.haven.relay</string>
+    <string>com.haven.static</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
         <string>-m</string>
-        <string>haven.relay_server</string>
-        <string>--port</string>
-        <string>8443</string>
-        <!-- --ws-port enables the WebSocket transport the web client (webapp/)
-             needs; drop it (or use --ws-port 0) if you only need desktop clients. -->
-        <string>--ws-port</string>
-        <string>8444</string>
-        <string>--db</string>
+        <string>http.server</string>
+        <string>8899</string>
+        <string>--bind</string>
+        <string>127.0.0.1</string>
         <!-- Adjust this path to wherever you cloned Haven -->
-        <string>/Users/YOURNAME/Developer/haven/relay.db</string>
+        <string>--directory</string>
+        <string>/Users/YOURNAME/Developer/haven/webapp/static</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/YOURNAME/Developer/haven</string>
@@ -26,8 +23,8 @@
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/haven-relay.log</string>
+    <string>/tmp/haven-static.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/haven-relay.err</string>
+    <string>/tmp/haven-static.err</string>
 </dict>
 </plist>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for a Cloudflare quick-tunnel launchd job. Copy this to
+  ~/Library/LaunchAgents/ three times, once per local port that needs a
+  public URL, renaming the Label each time and swapping in that port:
+
+    com.haven.tunnel-accounts.plist  ->  --url http://localhost:8000
+    com.haven.tunnel-relay.plist     ->  --url http://localhost:8444
+    com.haven.tunnel-static.plist    ->  --url http://localhost:8899
+
+  cloudflared has no config file needed for a quick tunnel — just download
+  the binary for your platform from
+  https://github.com/cloudflare/cloudflared/releases/latest and point
+  ProgramArguments at wherever you put it (avoid /tmp — it won't survive
+  a reboot). Each tunnel gets a random *.trycloudflare.com URL that only
+  changes if the tunnel process itself restarts (crash or reboot) — see
+  deploy/check-tunnels.sh to read the current URLs back out of the logs.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haven.tunnel-REPLACEME</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOURNAME/Developer/haven/bin/cloudflared</string>
+        <string>tunnel</string>
+        <string>--url</string>
+        <string>http://localhost:REPLACEME_PORT</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/tunnel-REPLACEME.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/tunnel-REPLACEME.log</string>
+</dict>
+</plist>

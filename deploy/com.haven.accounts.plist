@@ -3,31 +3,33 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.haven.relay</string>
+    <string>com.haven.accounts</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
         <string>-m</string>
-        <string>haven.relay_server</string>
+        <string>uvicorn</string>
+        <string>webapp.accounts_server:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
         <string>--port</string>
-        <string>8443</string>
-        <!-- --ws-port enables the WebSocket transport the web client (webapp/)
-             needs; drop it (or use --ws-port 0) if you only need desktop clients. -->
-        <string>--ws-port</string>
-        <string>8444</string>
-        <string>--db</string>
-        <!-- Adjust this path to wherever you cloned Haven -->
-        <string>/Users/YOURNAME/Developer/haven/relay.db</string>
+        <string>8000</string>
     </array>
+    <!-- Adjust this path to wherever you cloned Haven -->
     <key>WorkingDirectory</key>
     <string>/Users/YOURNAME/Developer/haven</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HAVEN_ACCOUNTS_DB</key>
+        <string>/Users/YOURNAME/Library/Application Support/Haven/haven_accounts.db</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/haven-relay.log</string>
+    <string>/tmp/haven-accounts.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/haven-relay.err</string>
+    <string>/tmp/haven-accounts.err</string>
 </dict>
 </plist>

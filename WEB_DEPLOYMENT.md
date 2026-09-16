@@ -115,6 +115,51 @@ too if you already know that stack.
    enter `https://haven.yourdomain.com/api` and
    `wss://haven.yourdomain.com/relay` (matching the Caddy paths above).
 
+## Option C: no domain, always-on on your own Mac (launchd)
+
+Options A and B assume a server. If you'd rather run everything on your own
+Mac and just need it to survive reboots and crashes without you manually
+restarting three terminal windows every time, use `launchd` (macOS's
+service manager) plus Cloudflare quick tunnels. The tradeoff versus a real
+server: it's genuinely "set and forget" for crashes and reboots, but it's
+still only reachable while your Mac is on, and each tunnel's URL will
+change if that tunnel process itself ever restarts (crash or reboot) —
+run `deploy/check-tunnels.sh` any time to read the current URLs back out.
+
+1. Download `cloudflared` somewhere permanent — **not** `/tmp`, which
+   doesn't survive a reboot:
+   ```bash
+   mkdir -p ~/Developer/haven/bin
+   curl -fL -o ~/Developer/haven/bin/cloudflared.tgz \
+     https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz
+   # use cloudflared-darwin-amd64.tgz instead if you're on an Intel Mac
+   tar -xzf ~/Developer/haven/bin/cloudflared.tgz -C ~/Developer/haven/bin
+   rm ~/Developer/haven/bin/cloudflared.tgz
+   chmod +x ~/Developer/haven/bin/cloudflared
+   ```
+2. Copy the six templates from `deploy/` into `~/Library/LaunchAgents/`,
+   filling in your username and paths: `com.haven.accounts.plist`,
+   `com.haven.relay.plist`, `com.haven.static.plist`, and three copies of
+   `com.haven.tunnel-template.plist` (one per port — see the comments
+   inside it).
+3. Load them all:
+   ```bash
+   for f in ~/Library/LaunchAgents/com.haven.*.plist; do
+     launchctl bootstrap gui/$(id -u) "$f"
+   done
+   ```
+4. Check status and get the current public URLs any time:
+   ```bash
+   deploy/check-tunnels.sh
+   ```
+5. To stop everything: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.haven.<name>.plist`
+   for each job, or just delete the plist files and reboot.
+
+Because the accounts database now lives outside the repo (so `git pull`
+never touches it), point `HAVEN_ACCOUNTS_DB` in the accounts plist at
+somewhere like `~/Library/Application Support/Haven/haven_accounts.db`,
+and give the relay's `--db` flag a similar persistent path.
+
 ## Keeping it running
 
 - Both `.service` files auto-restart on crash and start on boot.
