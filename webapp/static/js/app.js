@@ -59,6 +59,7 @@
       await showRecoveryPhrase(recoveryPhrase);
       await onLoggedIn(identity, username);
     } catch (e) {
+      console.error("signup failed:", e);
       setStatus(e.message);
     }
   }
@@ -73,6 +74,7 @@
       const { identity } = await state.accountsClient.login(username, password);
       await onLoggedIn(identity, username);
     } catch (e) {
+      console.error("login failed:", e);
       setStatus(e.message);
     }
   }
@@ -151,6 +153,7 @@
       try {
         await state.net.connectRelay(H.hexToBytes(meta.identityPubHex), meta.username);
       } catch (e) {
+        console.error("connectRelay failed:", e);
         appendLine("sys", "Could not reach relay: " + e.message);
       }
     }
@@ -173,6 +176,7 @@
       try {
         await state.net.connectRelay(H.hexToBytes(meta.identityPubHex), meta.username);
       } catch (e) {
+        console.error("connectRelay failed:", e);
         appendLine("sys", "Not connected: " + e.message);
         return;
       }
@@ -184,6 +188,7 @@
       await state.net.sendText(state.openFingerprint, text);
       appendLine("me", text);
     } catch (e) {
+      console.error("sendText failed:", e);
       appendLine("sys", "Send failed: " + e.message);
     }
   }
