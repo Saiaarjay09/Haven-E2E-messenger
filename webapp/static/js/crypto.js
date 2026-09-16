@@ -83,26 +83,17 @@ const Haven = (() => {
   // Identity keys (X25519)
   // ---------------------------------------------------------------------
 
-  // X25519 private keys round-trip through WebCrypto via JWK (RFC 8037's
-  // OKP representation: "d" is simply the raw 32-byte scalar, base64url
-  // encoded — no ASN.1/DER structure to get right). An earlier version of
-  // this file instead hand-assembled a PKCS8 DER wrapper around a
-  // hardcoded byte prefix, which happened to match Chromium's own PKCS8
-  // encoding but is not something the WebCrypto spec guarantees is
-  // identical across browser engines.
-  //
-  // RFC 8037 §2 makes the JWK "x" (public key) field REQUIRED even when
-  // importing a private key, and browsers enforce this: they reject a JWK
-  // with "d" but no "x", and — verified directly — reject a JWK where "x"
-  // doesn't actually correspond to "d" (a mismatched/dummy "x" throws
-  // DataError too). So reconstructing a key pair from just a stored raw
-  // private scalar (e.g. after loading an identity from encrypted local
-  // storage, or restoring one from a recovery phrase) needs the real
-  // public key computed independently first — WebCrypto has no "give me
-  // the public key for this private scalar" operation on its own. This is
-  // a plain X25519 scalar multiplication against the curve's base point
-  // (RFC 7748 §5, Montgomery ladder), verified byte-for-byte against
-  // haven/crypto.py's own key derivation via test_vectors.json.
+  // X25519 is implemented here in pure JS (RFC 7748 §5's Montgomery
+  // ladder over BigInt) rather than via crypto.subtle's native X25519
+  // support. Two earlier attempts at using the native curve — a
+  // hand-assembled PKCS8 wrapper, then a JWK-based import — each worked
+  // in Chromium but broke in another real browser, because WebCrypto's
+  // X25519 support (both whether it exists at all, and the exact
+  // behavior of its key-format handling) is inconsistent across engines.
+  // BigInt arithmetic has none of that inconsistency, so this is the
+  // version that actually is portable. Verified byte-for-byte against
+  // both haven/crypto.py's own key derivation (test_vectors.json) and
+  // RFC 7748 §5.2's independent scalar-mult test vectors.
   const X25519_P = (1n << 255n) - 19n;
   const X25519_A24 = 121665n;
   const X25519_BASE_U = (() => {
@@ -195,56 +186,35 @@ const Haven = (() => {
     return x25519ScalarMult(privateBytes, X25519_BASE_U);
   }
 
-  function bytesToBase64Url(bytes) {
-    let bin = "";
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-
-  function base64UrlToBytes(b64url) {
-    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(b64url.length / 4) * 4, "=");
-    const bin = atob(b64);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-
-  async function importX25519PrivateKeyRaw(rawPriv, rawPub) {
-    const publicBytes = rawPub || x25519PublicFromPrivate(rawPriv);
-    const jwk = {
-      kty: "OKP",
-      crv: "X25519",
-      d: bytesToBase64Url(rawPriv),
-      x: bytesToBase64Url(publicBytes),
-      key_ops: ["deriveBits"],
-      ext: true,
-    };
-    return crypto.subtle.importKey("jwk", jwk, { name: "X25519" }, true, ["deriveBits"]);
-  }
-
-  async function importX25519PublicKeyRaw(rawPub) {
-    return crypto.subtle.importKey("raw", rawPub, { name: "X25519" }, true, []);
-  }
-
-  async function generateKeyPair() {
-    const pair = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
-    const publicBytes = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
-    const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
-    const privateBytes = base64UrlToBytes(jwk.d);
-    return { privateKey: pair.privateKey, publicKey: pair.publicKey, privateBytes, publicBytes };
-  }
-
-  async function keyPairFromPrivateBytes(privateBytes) {
+  // X25519 support in crypto.subtle is NOT reliably present across
+  // browsers — it varies by engine and version, and even where it exists,
+  // its JWK/PKCS8 handling has already shown real interop bugs (see the
+  // git history of this file). So every X25519 operation — key
+  // generation, deriving a public key from a private one, and the actual
+  // Diffie-Hellman itself — is done with the pure-JS Montgomery ladder
+  // above instead. It depends on nothing but BigInt, which every current
+  // browser implements identically, and is verified byte-for-byte against
+  // both haven/crypto.py's derivation and RFC 7748 §5.2's own scalar-mult
+  // test vectors. WebCrypto is still used everywhere else in this file
+  // (AES-GCM/CTR, HKDF, HMAC, PBKDF2, SHA-256) — those primitives don't
+  // have this cross-browser support problem.
+  //
+  // "privateKey"/"publicKey" below are just aliases for the same raw byte
+  // arrays as "privateBytes"/"publicBytes" — kept so callers that already
+  // pass `identity.privateKey` into dh()/dhProof() don't need to change.
+  function generateKeyPair() {
+    const privateBytes = crypto.getRandomValues(new Uint8Array(32));
     const publicBytes = x25519PublicFromPrivate(privateBytes);
-    const privateKey = await importX25519PrivateKeyRaw(privateBytes, publicBytes);
-    const publicKey = await importX25519PublicKeyRaw(publicBytes);
-    return { privateKey, publicKey, privateBytes, publicBytes };
+    return { privateKey: privateBytes, publicKey: publicBytes, privateBytes, publicBytes };
   }
 
-  async function dh(myPrivateKey, theirPublicBytes) {
-    const theirPublicKey = await importX25519PublicKeyRaw(theirPublicBytes);
-    const bits = await crypto.subtle.deriveBits({ name: "X25519", public: theirPublicKey }, myPrivateKey, 256);
-    return new Uint8Array(bits);
+  function keyPairFromPrivateBytes(privateBytes) {
+    const publicBytes = x25519PublicFromPrivate(privateBytes);
+    return { privateKey: privateBytes, publicKey: publicBytes, privateBytes, publicBytes };
+  }
+
+  function dh(myPrivateKeyBytes, theirPublicBytes) {
+    return x25519ScalarMult(myPrivateKeyBytes, theirPublicBytes);
   }
 
   function fingerprint(pubA, pubB) {
