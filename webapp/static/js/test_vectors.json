@@ -1,0 +1,77 @@
+{
+  "keys": {
+    "alice_priv": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    "alice_pub": "07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c",
+    "alice_eph_priv": "01070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9",
+    "alice_eph_pub": "177d8f231f6cab89ea03f90d2f2d53dd9ba13c78947d5d85b83d494514e0b714",
+    "bob_priv": "05080b0e1114171a1d202326292c2f3235383b3e4144474a4d505356595c5f62",
+    "bob_pub": "61809d5fdf3553fb134e6563ad0aa24df0a8b737722126ed331d85425cf98e6e",
+    "bob_eph_priv": "010c17222d38434e59646f7a85909ba6b1bcc7d2dde8f3fe09141f2a35404b56",
+    "bob_eph_pub": "23941b97e84e5f29e8b6ed718a13490799dfcd78886cce935bfadecefde71c5b"
+  },
+  "fingerprint": {
+    "expected": "08007 11160 82336 24389 12740 98729"
+  },
+  "dh": {
+    "expected_hex": "94f379178d9945bff7c5f26b16048605b0cda1ea7aded149c62ef32944b40921"
+  },
+  "hkdf": {
+    "key_material_hex": "736f6d652073686172656420736563726574206d6174657269616c2c20333262",
+    "info": "test-info",
+    "length": 32,
+    "expected_hex": "c04baa436f7bfbfbec6edc3587db9faa09374c84ab0da181f789b14f371dcc96"
+  },
+  "dh_proof": {
+    "priv_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    "pub_hex": "61809d5fdf3553fb134e6563ad0aa24df0a8b737722126ed331d85425cf98e6e",
+    "nonce_hex": "000102030405060708090a0b0c0d0e0f",
+    "expected_hex": "aa44dc862ef528f34cc24b407cfe2dfb06c3609c8d56a65ddf6022295582b3dc"
+  },
+  "ratchet_step": {
+    "chain_key_hex": "27c9d75a65fd4c34141dad7607203a3154095969d11c5af376d46a12cb54e71f",
+    "expected_message_key_hex": "65ba9d14ee6cbe23557c2ff3084445ae3bd0a6794061931fbc33b82243703440",
+    "expected_next_chain_key_hex": "c711b162a3e41f62b3ce9c118499f4f224ede2c2ab6ed56a1d63e7d090f8cf34"
+  },
+  "handshake": {
+    "expected_root_key_hex": "382fbec618554426d4d680c9a95caf749941c81282bca3ff56c39ca5d47f6725",
+    "expected_alice_send_chain_hex": "935cf838cbf795cc39d295a2bf987ee7ad0e353011832ecb9e7ca732394950c8",
+    "expected_alice_recv_chain_hex": "d5ac613d1310e1e5280c8fae0d01ad6e136412fd7fe4910e60e6a5e467206694"
+  },
+  "aes_gcm": {
+    "key_hex": "5e8d0f78a4eda660f24d771bf870e4b51dc419ce364996e83201e689b1817aa8",
+    "nonce_hex": "000102030405060708090a0b",
+    "plaintext_utf8": "Hello from the Python reference implementation!",
+    "aad_utf8": "test-aad",
+    "expected_ciphertext_hex": "f28c284d244820989cfbdadbcb8cd5a654d9f71ee8011d8d69a161228d17c7fa8258e698f00cbbd809e120a34d2a93042b97fcf5f45d6840a7db39766456a0"
+  },
+  "aes_ctr": {
+    "key_hex": "c79ee2c0eed3fd7a7bc52d7d38feffd09788f15e2d46d5ab0f0c197ce8e80133",
+    "iv_hex": "000102030405060708090a0b0c0d0e0f",
+    "plaintext_utf8": "Backup plaintext material, arbitrary length here.",
+    "expected_ciphertext_hex": "ca97378816fce2ce532ac382c3ff867176ef93f1592c88be59612c06ace4cdf5ef06fe7c4e11c70e749981584a1c568430"
+  },
+  "scrypt": {
+    "password": "correct horse battery staple",
+    "salt_hex": "000102030405060708090a0b0c0d0e0f",
+    "n": 32768,
+    "r": 8,
+    "p": 1,
+    "length": 32,
+    "expected_hex": "7a8e34241db898d59175c696538c417467a975ffe569068425f16188d3159c58"
+  },
+  "derive_split_keys": {
+    "password": "hunter2-but-better",
+    "salt_hex": "101112131415161718191a1b1c1d1e1f",
+    "expected_auth_key_hex": "c251df6ecd0b4ea9bbe56b367f70588207e15e93da7744fe89002098f0185c08",
+    "expected_enc_key_hex": "11b9360c342f54934b4646506ca2a58843d7c1db778da513d7c82b7ef5334b99"
+  },
+  "ratchet_session_encrypt": {
+    "send_chain_key_hex": "935cf838cbf795cc39d295a2bf987ee7ad0e353011832ecb9e7ca732394950c8",
+    "aad_utf8": "session-aad",
+    "plaintext_utf8": "integration test message",
+    "expected_index": 0,
+    "expected_nonce_hex": "5a5b5c5d5e5f606162636465",
+    "expected_ciphertext_hex": "4c55d2d8d86e4f3cf6ec8e5edd1bbdd3eeb45e99be34053cc31236fd1ec2dac40b796192ac7e40e5",
+    "expected_next_send_chain_key_hex": "4669f9517e70cf6fe227c5337724c8e6ed980bc13cfaf785b8c31e5ceded5066"
+  }
+}

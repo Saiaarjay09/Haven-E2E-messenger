@@ -65,9 +65,17 @@ uvicorn webapp.accounts_server:app --host 0.0.0.0 --port 8000
 
 See `test_webapp_accounts_smoke.py` — it drives a real running instance
 over real HTTP with a Python stand-in for what a browser client does,
-and that stand-in **is** the protocol spec for whoever writes the actual
-JS client: derive keys the same way, hit the same endpoints, in the same
+which was in turn the protocol spec the actual JS client (below) follows
+exactly: derive keys the same way, hit the same endpoints, in the same
 order.
+
+CORS is wide open (`allow_origins=["*"]`) deliberately, not as an
+oversight: every request here carries its own explicit `auth_key` in the
+JSON body rather than a browser-attached cookie/session, so there's no
+ambient credential for a stricter origin policy to protect — the
+CSRF-style attack that CORS restrictions normally prevent doesn't apply
+to this API's shape. A production deployment MAY still restrict origins
+for defense in depth; it isn't required for the auth model to be sound.
 
 ### API summary
 
@@ -87,33 +95,88 @@ honest single-process tradeoff `haven/relay_server.py` already has (see
 main `ROADMAP.md`); a real multi-instance deployment would need a shared
 store instead.
 
-## What's NOT built yet: the actual browser client (Phase 7b+)
+## What's built: a real, working browser chat client (Phases 7b-7d)
 
-Signing up and logging in doesn't yet get you a working chat in a
-browser — that needs a much larger piece of work, planned as follow-on
-phases:
+Two people can sign up, add each other, and exchange real end-to-end
+encrypted text messages entirely in the browser — verified end-to-end,
+not just unit-tested. Run it:
 
-- **7b — WebSocket relay**: browsers can't open raw TCP sockets, so
-  `relay_server.py`'s protocol needs a WebSocket transport alongside (or
-  instead of) TCP. The message format doesn't need to change, only how
-  bytes get from client to relay.
-- **7c — Browser crypto + storage**: reimplementing `crypto.py`'s
-  X25519/AES-GCM/ratchet in JavaScript (via a well-audited library like
-  libsodium.js compiled to WASM, not hand-rolled crypto), plus IndexedDB
-  as the browser's equivalent of the desktop's encrypted SQLite store,
-  plus a WebSocket-based `network.py` equivalent. This is the biggest
-  single chunk of remaining work — realistically its own multi-session
-  effort, mirroring how the desktop app's Phases 1-2 were the foundation
-  everything else built on.
-- **7d — UI**: an HTML/JS chat interface covering what `gui.py` covers,
-  starting with text chat and expanding from there the same way the
-  desktop app's phases did.
-- **7e — Calls and rich content in-browser**: WebRTC/`getUserMedia` for
-  calls, `<input type=file>` + canvas for images/GIFs — smaller ports of
-  `calls.py`/`attachments.py`'s existing designs once 7c exists.
-- **On-device AI in-browser** is its own open question: running
-  Whisper/an LLM inside a browser tab via WASM (projects like
-  whisper.cpp's WASM build or transformers.js exist) is possible but
-  meaningfully heavier and slower than the desktop app's native
-  `faster-whisper`/`llama-cpp-python` — likely a reduced-scope version
-  rather than full parity, if it's built at all.
+```bash
+pip install -r requirements.txt -r webapp/requirements.txt
+uvicorn webapp.accounts_server:app --port 8000 &
+python3 -m haven.relay_server --port 8443 --ws-port 8444 &
+python3 -m http.server 8899 --directory webapp/static
+```
+Then open `http://localhost:8899` in two browser tabs (or two devices).
+
+### 7b — WebSocket relay transport
+`haven/relay_server.py` now listens on a WebSocket port (`--ws-port`,
+default 8444) alongside its original TCP port — same handshake, same
+frame shapes, ONE shared routing table and message queue, so a browser
+client and a desktop client on the same relay reach each other
+transparently. See `test_ws_relay_smoke.py`, which includes the actual
+interop case: a TCP client and a WebSocket client on the same relay
+exchanging a handshake.
+
+### 7c — Browser crypto engine + storage + network (`webapp/static/js/`)
+- **`crypto.js`** is a byte-for-byte port of `haven/crypto.py`: X25519
+  (via native WebCrypto), the 3-DH handshake, the symmetric ratchet,
+  AES-256-GCM/CTR, HKDF, and — since WebCrypto has no native scrypt — a
+  from-spec scrypt implementation (Salsa20/8 + BlockMix + ROMix, with
+  WebCrypto's PBKDF2 doing the outer calls). This is the part that
+  mattered most to get right, so it's the most heavily verified code in
+  the whole project: `test_crypto.html` checks it against **three of
+  scrypt's own official RFC 7914 test vectors** (independent ground
+  truth, not just self-consistency) AND against 20+ vectors generated
+  directly from `haven/crypto.py` for every custom primitive
+  (fingerprint, HKDF, the handshake, the ratchet, `dh_proof`,
+  `derive_split_keys`), confirming the browser and desktop
+  implementations produce **identical output for identical input** —
+  plus full round-trip and security-property checks (out-of-order
+  rejection, tamper detection, wrong-key-gives-garbage for the deniable
+  backup cipher).
+- **`storage.js`** is the IndexedDB equivalent of `haven/storage.py`:
+  same design, message content decrypted once and re-encrypted at rest
+  with an identity-derived key, independent of the ratchet.
+- **`network.js`** is the relay-only equivalent of `haven/network.py` —
+  a browser can't open raw TCP/UDP, so unlike the desktop app there's no
+  direct-LAN path here; every contact is reached through a relay.
+- **`auth.js`** is the reference browser implementation of the Phase 7a
+  zero-knowledge protocol: `derive_split_keys`, then hit the accounts
+  API in the documented order.
+
+### 7d — UI (`webapp/static/index.html`, `app.js`)
+Sign up or log in, see a real 12-word recovery phrase once (shown inline,
+not via a JS `alert()` — those are unreliable to copy from and hard to
+test), add a contact by pasting their card, see the same safety number
+your contact sees, verify it, and chat. Verified two ways:
+- `test_e2e.html` drives the actual `storage.js`/`network.js`/`auth.js`
+  stack (two independent identities, both hitting a real running
+  accounts service and relay) and checks 13 properties automatically:
+  signup, login, the full message round trip in both directions,
+  encrypted local history, and — including the complete recovery-phrase
+  password reset flow against the live server.
+- Manually driven in a real browser across two tabs: signup, login,
+  contact exchange, live bidirectional messaging, and confirming a
+  received message survives a full page reload (recovered from
+  encrypted IndexedDB storage, not just in-memory state).
+
+## What's NOT built yet (Phase 7e and beyond)
+
+- **Groups, calls, rich content, on-device AI in-browser.** Each is a
+  real, separate port of `groups.py`/`calls.py`/`attachments.py`/`ai.py`
+  once there's appetite to continue — calls would use
+  WebRTC/`getUserMedia`, on-device AI would need Whisper/an LLM running
+  via WASM (heavier and slower than the desktop app's native libraries;
+  likely reduced scope rather than full parity).
+- **No LAN/direct-connect path for the browser client** — inherent to
+  running in a browser, not a gap to close; every contact goes through
+  a relay.
+- **No queue-and-retry UX for sending mid-handshake.** The desktop app
+  queues a message and retries for a few seconds if you type before a
+  relay handshake finishes; the web client currently does a single fixed
+  ~500ms wait before sending. Fine for a demo, worth hardening before
+  relying on it.
+- **No per-contact relay assignment** (the desktop app's multi-relay
+  feature) — the web client currently has exactly one relay, configured
+  at login.

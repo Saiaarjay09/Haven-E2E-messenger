@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Haven crypto.js verification</title></head>
+<body>
+<pre id="out">running...</pre>
+<script src="js/crypto.js"></script>
+<script>
+const out = [];
+function log(msg) { out.push(msg); console.log(msg); }
+function assertEq(actual, expected, label) {
+  const a = actual instanceof Uint8Array ? Haven.bytesToHex(actual) : actual;
+  const e = expected instanceof Uint8Array ? Haven.bytesToHex(expected) : expected;
+  if (a !== e) {
+    log(`FAIL: ${label}\n  expected: ${e}\n  actual:   ${a}`);
+    window.__failures = (window.__failures || 0) + 1;
+  } else {
+    log(`PASS: ${label}`);
+  }
+}
+
+async function main() {
+  const vectors = await fetch("js/test_vectors.json").then(r => r.json());
+  const H = Haven;
+
+  // --- RFC 7914's own official scrypt test vectors (independent ground
+  // truth from the spec itself, not just cross-checking against our own
+  // Python implementation — verifies the from-scratch Salsa20/8 + ROMix
+  // implementation against a source neither side of this project wrote) ---
+  const rfc1 = await H.scrypt(H.utf8(""), H.utf8(""), 16, 1, 1, 64);
+  assertEq(rfc1, "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906", "RFC 7914 scrypt vector 1 (empty password/salt, N=16,r=1,p=1)");
+
+  const rfc2 = await H.scrypt(H.utf8("password"), H.utf8("NaCl"), 1024, 8, 16, 64);
+  assertEq(rfc2, "fdbabe1c9d3472007856e7190d01e9fe7c6ad7cbc8237830e77376634b3731622eaf30d92e22a3886ff109279d9830dac727afb94a83ee6d8360cbdfa2cc0640", "RFC 7914 scrypt vector 2 (password/NaCl, N=1024,r=8,p=16)");
+
+  const rfc3 = await H.scrypt(H.utf8("pleaseletmein"), H.utf8("SodiumChloride"), 16384, 8, 1, 64);
+  assertEq(rfc3, "7023bdcb3afd7348461c06cd81fd38ebfda8fbba904f8e3ea9b543f6545da1f2d5432955613f0fcf62d49705242a9af9e61e85dc0d651e40dfcf017b45575887", "RFC 7914 scrypt vector 3 (pleaseletmein/SodiumChloride, N=16384,r=8,p=1)");
+
+  // --- cross-implementation vectors generated from haven/crypto.py ---
+  const keys = vectors.keys;
+  const alicePriv = H.hexToBytes(keys.alice_priv);
+  const alicePub = H.hexToBytes(keys.alice_pub);
+  const aliceEphPriv = H.hexToBytes(keys.alice_eph_priv);
+  const aliceEphPub = H.hexToBytes(keys.alice_eph_pub);
+  const bobPriv = H.hexToBytes(keys.bob_priv);
+  const bobPub = H.hexToBytes(keys.bob_pub);
+  const bobEphPriv = H.hexToBytes(keys.bob_eph_priv);
+  const bobEphPub = H.hexToBytes(keys.bob_eph_pub);
+
+  const alice = await H.keyPairFromPrivateBytes(alicePriv);
+  const aliceEph = await H.keyPairFromPrivateBytes(aliceEphPriv);
+  const bob = await H.keyPairFromPrivateBytes(bobPriv);
+  const bobEph = await H.keyPairFromPrivateBytes(bobEphPriv);
+
+  assertEq(alice.publicBytes, alicePub, "keyPairFromPrivateBytes derives the correct public key (alice)");
+  assertEq(bob.publicBytes, bobPub, "keyPairFromPrivateBytes derives the correct public key (bob)");
+
+  // fingerprint
+  const fp = await H.fingerprint(alicePub, bobPub);
+  assertEq(fp, vectors.fingerprint.expected, "fingerprint matches Python");
+
+  // raw X25519 ECDH
+  const sharedSecret = await H.dh(alice.privateKey, bobPub);
+  assertEq(sharedSecret, vectors.dh.expected_hex, "raw X25519 ECDH matches Python");
+
+  // HKDF
+  const hkdfOut = await H.hkdf(H.hexToBytes(vectors.hkdf.key_material_hex), H.utf8(vectors.hkdf.info), vectors.hkdf.length);
+  assertEq(hkdfOut, vectors.hkdf.expected_hex, "HKDF matches Python");
+
+  // dh_proof
+  const proof = await H.dhProof(alice.privateKey, H.hexToBytes(vectors.dh_proof.pub_hex), H.hexToBytes(vectors.dh_proof.nonce_hex));
+  assertEq(proof, vectors.dh_proof.expected_hex, "dh_proof matches Python");
+
+  // ratchet_step
+  const rs = await H.ratchetStep(H.hexToBytes(vectors.ratchet_step.chain_key_hex));
+  assertEq(rs.messageKey, vectors.ratchet_step.expected_message_key_hex, "ratchet_step message_key matches Python");
+  assertEq(rs.nextChainKey, vectors.ratchet_step.expected_next_chain_key_hex, "ratchet_step next_chain_key matches Python");
+
+  // full 3-DH handshake, both directions, cross-checked against Python AND each other
+  const rootFromAlice = await H.computeSharedRootKey({
+    isInitiator: true, myIdentity: alice, myEphemeral: aliceEph,
+    theirIdentityPub: bobPub, theirEphemeralPub: bobEphPub,
+  });
+  assertEq(rootFromAlice, vectors.handshake.expected_root_key_hex, "compute_shared_root_key (initiator) matches Python");
+
+  const rootFromBob = await H.computeSharedRootKey({
+    isInitiator: false, myIdentity: bob, myEphemeral: bobEph,
+    theirIdentityPub: alicePub, theirEphemeralPub: aliceEphPub,
+  });
+  assertEq(rootFromBob, rootFromAlice, "both sides of the handshake derive the identical root key");
+
+  const aliceChains = await H.deriveChainKeys(rootFromAlice, true);
+  assertEq(aliceChains.send, vectors.handshake.expected_alice_send_chain_hex, "derive_chain_keys send chain matches Python");
+  assertEq(aliceChains.recv, vectors.handshake.expected_alice_recv_chain_hex, "derive_chain_keys recv chain matches Python");
+
+  const bobChains = await H.deriveChainKeys(rootFromBob, false);
+  assertEq(bobChains.send, aliceChains.recv, "bob's send chain == alice's recv chain (cross-match)");
+  assertEq(bobChains.recv, aliceChains.send, "bob's recv chain == alice's send chain (cross-match)");
+
+  // AES-256-GCM (raw primitive, fixed nonce, matching the raw AESGCM call Python made)
+  const gcmKey = H.hexToBytes(vectors.aes_gcm.key_hex);
+  const gcmNonce = H.hexToBytes(vectors.aes_gcm.nonce_hex);
+  const gcmCiphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: gcmNonce, additionalData: H.utf8(vectors.aes_gcm.aad_utf8) },
+    await crypto.subtle.importKey("raw", gcmKey, "AES-GCM", false, ["encrypt"]),
+    H.utf8(vectors.aes_gcm.plaintext_utf8)
+  ));
+  assertEq(gcmCiphertext, vectors.aes_gcm.expected_ciphertext_hex, "AES-256-GCM ciphertext matches Python byte-for-byte");
+
+  // AES-256-CTR (deniable backup cipher)
+  const ctrKey = H.hexToBytes(vectors.aes_ctr.key_hex);
+  const ctrIv = H.hexToBytes(vectors.aes_ctr.iv_hex);
+  const ctrCiphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-CTR", counter: ctrIv, length: 128 },
+    await crypto.subtle.importKey("raw", ctrKey, "AES-CTR", false, ["encrypt"]),
+    H.utf8(vectors.aes_ctr.plaintext_utf8)
+  ));
+  assertEq(ctrCiphertext, vectors.aes_ctr.expected_ciphertext_hex, "AES-256-CTR ciphertext matches Python byte-for-byte");
+
+  // our specific scrypt parameters (N=2^15,r=8,p=1) match Python's `cryptography` Scrypt
+  const scryptOut = await H.deriveKeyFromPassword(vectors.scrypt.password, H.hexToBytes(vectors.scrypt.salt_hex), vectors.scrypt.length);
+  assertEq(scryptOut, vectors.scrypt.expected_hex, "scrypt (N=2^15,r=8,p=1) matches Python's cryptography library");
+
+  // derive_split_keys (webapp zero-knowledge auth/enc split)
+  const split = await H.deriveSplitKeys(vectors.derive_split_keys.password, H.hexToBytes(vectors.derive_split_keys.salt_hex));
+  assertEq(split.authKey, vectors.derive_split_keys.expected_auth_key_hex, "derive_split_keys auth_key matches Python");
+  assertEq(split.encKey, vectors.derive_split_keys.expected_enc_key_hex, "derive_split_keys enc_key matches Python");
+
+  // full RatchetSession.encrypt using the SAME chain key + a fixed nonce
+  // (bypassing the class's internal random nonce just for this exact
+  // byte-for-byte check against Python's own RatchetSession.encrypt output)
+  {
+    const sendChainKey = H.hexToBytes(vectors.ratchet_session_encrypt.send_chain_key_hex);
+    const { messageKey, nextChainKey } = await H.ratchetStep(sendChainKey);
+    const fixedNonce = H.hexToBytes(vectors.ratchet_session_encrypt.expected_nonce_hex);
+    const aad = H.utf8(vectors.ratchet_session_encrypt.aad_utf8);
+    const index = vectors.ratchet_session_encrypt.expected_index;
+    const fullAad = H.concatBytes(aad, (() => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(index)); return b; })());
+    const ct = new Uint8Array(await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: fixedNonce, additionalData: fullAad },
+      await crypto.subtle.importKey("raw", messageKey, "AES-GCM", false, ["encrypt"]),
+      H.utf8(vectors.ratchet_session_encrypt.plaintext_utf8)
+    ));
+    assertEq(ct, vectors.ratchet_session_encrypt.expected_ciphertext_hex, "RatchetSession.encrypt ciphertext matches Python byte-for-byte (fixed nonce)");
+    assertEq(nextChainKey, vectors.ratchet_session_encrypt.expected_next_send_chain_key_hex, "RatchetSession chain advances identically to Python");
+  }
+
+  // --- end-to-end round trip using the actual classes (real random nonces) ---
+  {
+    const session1 = new H.RatchetSession(aliceChains.send, aliceChains.recv);
+    const session2 = new H.RatchetSession(bobChains.send, bobChains.recv);
+    const plaintext = H.utf8("round trip test message");
+    const aad = H.utf8("roundtrip-aad");
+    const envelope = await session1.encrypt(plaintext, aad);
+    const decrypted = await session2.decrypt(envelope, aad);
+    assertEq(H.fromUtf8(decrypted), "round trip test message", "full RatchetSession round trip (session1 -> session2) recovers plaintext");
+
+    const reply = await session2.encrypt(H.utf8("reply message"), aad);
+    const decryptedReply = await session1.decrypt(reply, aad);
+    assertEq(H.fromUtf8(decryptedReply), "reply message", "full RatchetSession round trip (session2 -> session1) recovers plaintext");
+
+    // out-of-order rejection
+    let threw = false;
+    try {
+      const env2 = await session1.encrypt(H.utf8("skip me"), aad);
+      const env3 = await session1.encrypt(H.utf8("this arrives first, should be rejected"), aad);
+      await session2.decrypt(env3, aad); // index mismatch: session2 expects the one from env2 first
+    } catch (e) {
+      threw = true;
+    }
+    assertEq(threw, true, "out-of-order message is correctly rejected, not silently accepted");
+  }
+
+  // --- authenticated encryption round trip + tamper detection ---
+  {
+    const key = crypto.getRandomValues(new Uint8Array(32));
+    const plaintext = H.utf8("local storage plaintext");
+    const aad = H.utf8("some-aad");
+    const blob = await H.encryptAuthenticated(key, plaintext, aad);
+    const decrypted = await H.decryptAuthenticated(key, blob, aad);
+    assertEq(H.fromUtf8(decrypted), "local storage plaintext", "encryptAuthenticated/decryptAuthenticated round trip");
+
+    let tamperDetected = false;
+    const tampered = new Uint8Array(blob);
+    tampered[tampered.length - 1] ^= 0xff;
+    try {
+      await H.decryptAuthenticated(key, tampered, aad);
+    } catch (e) {
+      tamperDetected = true;
+    }
+    assertEq(tamperDetected, true, "tampering with authenticated ciphertext is detected");
+  }
+
+  // --- deniable encryption round trip (wrong key gives garbage, not an error) ---
+  {
+    const key = crypto.getRandomValues(new Uint8Array(32));
+    const wrongKey = crypto.getRandomValues(new Uint8Array(32));
+    const plaintext = H.utf8("backup plaintext");
+    const blob = await H.encryptDeniable(key, plaintext);
+    const decrypted = await H.decryptDeniable(key, blob);
+    assertEq(H.fromUtf8(decrypted), "backup plaintext", "encryptDeniable/decryptDeniable round trip");
+
+    const wrongDecrypted = await H.decryptDeniable(wrongKey, blob); // must NOT throw
+    const isGarbage = H.fromUtf8(wrongDecrypted) !== "backup plaintext";
+    assertEq(isGarbage, true, "decrypting with the wrong key silently gives garbage, not an exception");
+  }
+
+  const failures = window.__failures || 0;
+  log(failures === 0 ? "\nALL CRYPTO.JS TESTS PASSED" : `\n${failures} TEST(S) FAILED`);
+  document.getElementById("out").textContent = out.join("\n");
+  window.__testsDone = true;
+  window.__testFailures = failures;
+}
+
+main().catch(e => {
+  document.getElementById("out").textContent = out.join("\n") + "\n\nUNCAUGHT ERROR: " + e.stack;
+  window.__testsDone = true;
+  window.__testFailures = -1;
+});
+</script>
+</body>
+</html>

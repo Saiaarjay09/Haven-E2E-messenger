@@ -25,6 +25,7 @@ import time
 
 import bcrypt
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 from .accounts_db import AccountsDB, UsernameTaken
@@ -104,6 +105,20 @@ login_limiter = SimpleRateLimiter(max_attempts=10, window_seconds=60.0)
 signup_limiter = SimpleRateLimiter(max_attempts=5, window_seconds=60.0)
 
 app = FastAPI(title="Haven Accounts Service")
+
+# Permissive CORS is safe here specifically because this API has no
+# cookie/session-based ambient authority for CORS to protect against —
+# every request carries its own explicit auth_key in the JSON body, not
+# a browser-attached credential, so there's no CSRF-style attack a
+# stricter origin policy would prevent. A real deployment MAY still want
+# to restrict this to its actual web client's origin for defense in depth;
+# it isn't required for the auth model itself to be sound.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 @app.get("/api/username-available")

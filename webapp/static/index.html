@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Haven</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; background: #f5f5f5; }
+  #login-screen { max-width: 420px; margin: 60px auto; background: white; padding: 24px; border-radius: 8px; }
+  #login-screen h1 { margin-top: 0; }
+  #login-screen label { display: block; margin-top: 10px; font-size: 13px; color: #555; }
+  #login-screen input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 2px; }
+  #login-screen button { margin-top: 14px; margin-right: 8px; padding: 6px 14px; }
+  #login-status { color: #b00; margin-top: 10px; min-height: 1.2em; }
+
+  #app-screen { display: flex; height: 100vh; }
+  #sidebar { width: 240px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+  #sidebar-header { padding: 10px; border-bottom: 1px solid #eee; }
+  #peer-list { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
+  #peer-list li { padding: 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+  #peer-list li.selected { background: #e8f0fe; }
+  #sidebar-footer { padding: 10px; border-top: 1px solid #eee; }
+  #sidebar-footer button { display: block; width: 100%; margin-bottom: 6px; padding: 6px; }
+
+  #chat-area { flex: 1; display: flex; flex-direction: column; }
+  #chat-header { padding: 12px; border-bottom: 1px solid #ddd; background: #fff; }
+  #chat-title { font-weight: bold; }
+  #safety-number { font-size: 12px; color: #666; margin-top: 4px; }
+  #verify-btn { font-size: 12px; margin-left: 8px; }
+  #messages { flex: 1; overflow-y: auto; padding: 12px; }
+  .msg { margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; max-width: 60%; }
+  .msg.me { background: #d1e7dd; margin-left: auto; }
+  .msg.them { background: #fff; border: 1px solid #ddd; }
+  .msg.sys { color: #888; font-style: italic; background: none; max-width: 100%; }
+  #entry-row { display: flex; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
+  #message-input { flex: 1; padding: 8px; }
+  #send-btn { margin-left: 8px; padding: 8px 16px; }
+
+  #recovery-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+  #recovery-overlay.hide { display: none; }
+  #recovery-box { background: #fff; padding: 20px; border-radius: 8px; max-width: 420px; }
+  #recovery-phrase { font-family: monospace; font-size: 15px; background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 10px 0; user-select: all; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h1>Haven</h1>
+  <p style="color:#666; font-size:13px;">A hosted, end-to-end encrypted chat client. Everything is
+  encrypted on this device — the server never sees your password or your messages.</p>
+  <label>Username</label>
+  <input id="username" autocomplete="username">
+  <label>Password</label>
+  <input id="password" type="password" autocomplete="current-password">
+  <label>Accounts server URL (leave blank for default)</label>
+  <input id="accounts-url">
+  <label>Relay WebSocket URL (leave blank for default)</label>
+  <input id="relay-url">
+  <div>
+    <button id="login-btn">Log in</button>
+    <button id="signup-btn">Create account</button>
+  </div>
+  <div id="login-status"></div>
+</div>
+
+<div id="app-screen" hidden>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      Signed in as <b id="my-username"></b>
+      <div id="relay-status" style="font-size:12px;color:#666;">Relay: connecting…</div>
+    </div>
+    <ul id="peer-list"></ul>
+    <div id="sidebar-footer">
+      <div id="add-contact-row" hidden>
+        <input id="add-contact-input" placeholder="Paste contact card…" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+        <button id="add-contact-confirm">Add</button>
+        <button id="add-contact-cancel">Cancel</button>
+      </div>
+      <button id="add-contact-btn">Add contact…</button>
+      <div id="my-card-row" hidden>
+        <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+      </div>
+      <button id="my-card-btn">My contact card</button>
+    </div>
+  </div>
+  <div id="chat-area">
+    <div id="chat-header">
+      <div id="chat-title">Select a contact</div>
+      <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
+    </div>
+    <div id="messages"></div>
+    <div id="entry-row">
+      <input id="message-input" placeholder="Type a message…">
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="recovery-overlay" class="hide">
+  <div id="recovery-box">
+    <b>Write down your recovery phrase</b>
+    <p style="font-size:13px;color:#555;">This is the only way back into your account if you forget your
+    password. It will not be shown again.</p>
+    <div id="recovery-phrase"></div>
+    <button id="recovery-ack-btn">I've written it down</button>
+  </div>
+</div>
+
+<script src="js/crypto.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/network.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

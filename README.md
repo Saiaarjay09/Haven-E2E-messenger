@@ -12,8 +12,12 @@ discovery, a self-hosted relay for reaching friends off your LAN with
 offline message queuing, real end-to-end encrypted group chats,
 images/GIFs/stickers/links, voice and video calls, and on-device AI
 (speech-to-text, translation, a local assistant, and live call captions).
-Work has also started on a hosted web app (global unique usernames +
-account recovery are live; see `webapp/README.md`).
+A hosted web app is also live at a basic-but-real level: sign up, add a
+contact, and exchange genuine end-to-end encrypted messages entirely in
+the browser, with global unique usernames and recovery-phrase password
+reset — see `webapp/README.md` for what that involved (and the real
+security tradeoff it accepts that this desktop app doesn't have). Groups,
+calls, rich content, and on-device AI in the browser aren't built yet.
 
 ## Run it (LAN only, no setup)
 
@@ -256,18 +260,27 @@ in a fake key in the middle — the same trust model Signal uses.
   password reset via the phrase actually invalidates the old password,
   a wrong phrase is rejected without touching the account, and the
   phrase is never written to disk in plaintext anywhere.
-- **Hosted web accounts service (Phase 7a)**: `webapp/` is a real
-  zero-knowledge accounts server (FastAPI) — global username uniqueness
-  and password auth where the server never sees your password or
-  anything that could decrypt your identity blob (the same auth-key/
-  encryption-key split pattern Bitwarden uses). Verified against a real
-  running server process in `test_webapp_accounts_smoke.py`: signup,
-  case-insensitive uniqueness, login, recovery-phrase reset, and that the
-  server's own database never contains a plaintext password, phrase, or
-  private key. See `webapp/README.md` for what this is (and isn't) yet —
-  the browser-based chat client itself is a much larger, separate piece
-  of work still ahead, and for the real, unavoidable security tradeoff
-  browser-delivered crypto accepts that the desktop app doesn't have.
+- **Hosted web app (Phase 7)**: `webapp/` is a real zero-knowledge
+  accounts server (FastAPI — global username uniqueness and password
+  auth where the server never sees your password or anything that could
+  decrypt your identity blob, the same auth-key/encryption-key split
+  pattern Bitwarden uses) PLUS a working browser chat client: a
+  byte-for-byte JavaScript port of `haven/crypto.py` (X25519, the 3-DH
+  handshake, the ratchet, AES-GCM/CTR, and a from-spec scrypt
+  implementation — WebCrypto has no native scrypt), IndexedDB storage, a
+  WebSocket relay transport, and a UI. Two people can sign up and
+  exchange genuine end-to-end encrypted messages entirely in the browser.
+  Verified at every layer: `test_webapp_accounts_smoke.py` against a real
+  running server, `test_ws_relay_smoke.py` for the WebSocket transport
+  (including real TCP-client-to-WebSocket-client interop),
+  `webapp/static/test_crypto.html` for the crypto engine (three of
+  scrypt's own RFC 7914 test vectors plus 20+ cross-checks against
+  `haven/crypto.py`'s exact output), and `webapp/static/test_e2e.html`
+  for the full signup/login/message/recovery flow against live servers.
+  See `webapp/README.md` for what's still ahead (groups, calls, rich
+  content, on-device AI in-browser) and for the real, irreducible
+  security tradeoff browser-delivered crypto accepts that this desktop
+  app doesn't have.
 
 ## Known limitations
 
@@ -332,10 +345,19 @@ haven/
   recovery.py      recovery-phrase generation (BIP39 wordlist)
   data/wordlist.txt  the 2048-word BIP39 English wordlist
   gui.py           Tkinter UI
-webapp/                    hosted accounts service (Phase 7a) — see webapp/README.md
+webapp/                    hosted web app (Phase 7) — see webapp/README.md
   accounts_server.py       FastAPI app: signup/login/forgot-password
   accounts_db.py           SQLite storage for hosted accounts
   requirements.txt         webapp-only dependencies (fastapi, uvicorn, bcrypt)
+  generate_vectors.py      regenerates static/js/test_vectors.json from haven/crypto.py
+  static/
+    index.html, js/app.js  the browser chat UI
+    js/crypto.js           byte-for-byte JS port of haven/crypto.py
+    js/storage.js          IndexedDB equivalent of haven/storage.py
+    js/network.js          WebSocket-relay equivalent of haven/network.py
+    js/auth.js             browser client for the Phase 7a accounts API
+    test_crypto.html       browser test: crypto.js vs RFC 7914 + haven/crypto.py vectors
+    test_e2e.html          browser test: full signup/login/message/recovery flow, live servers
 main.py                        entry point
 requirements.txt               pip dependencies for the desktop app
 test_smoke.py                  headless end-to-end test: direct LAN handshake, messaging, backups
@@ -347,4 +369,10 @@ test_ai_smoke.py               headless end-to-end test: STT + translation + liv
 test_multi_relay_smoke.py      headless end-to-end test: per-contact relay assignment across two live relays
 test_recovery_smoke.py         headless end-to-end test: recovery-phrase password reset
 test_webapp_accounts_smoke.py  headless end-to-end test: hosted signup/login/recovery over real HTTP
+test_ws_relay_smoke.py         headless end-to-end test: WebSocket relay + TCP/WebSocket interop
 ```
+
+Browser tests (`webapp/static/test_crypto.html`, `test_e2e.html`) need a
+static file server rather than opening the file directly — e.g.
+`python3 -m http.server 8899 --directory webapp/static`, then visit
+`http://localhost:8899/test_crypto.html`.

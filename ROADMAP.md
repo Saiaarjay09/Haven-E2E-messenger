@@ -25,7 +25,7 @@ design — there is deliberately no third way in, e.g. no email reset,
 since that would need a server and undermine the whole local-first
 model). Verified in `test_recovery_smoke.py`.
 
-## Phase 7 — Hosted web app (in progress)
+## Phase 7 — Hosted web app (7a-7d done, 7e ahead)
 
 ### 7a — Accounts service ✅ done
 `webapp/accounts_server.py` (FastAPI) + `webapp/accounts_db.py`
@@ -55,22 +55,59 @@ updating it). It's why Signal/WhatsApp avoid pure browser-based crypto as
 a primary client. Phase 7 was scoped and built with this tradeoff
 explicitly accepted, not overlooked.
 
-### 7b — WebSocket relay (not started)
-Browsers can't open raw TCP sockets, so `relay_server.py`'s protocol
-needs a WebSocket transport alongside (or instead of) TCP. The message
-format itself doesn't need to change.
+### 7b — WebSocket relay ✅ done
+`relay_server.py` now listens on a WebSocket port (`--ws-port`) alongside
+its original TCP port, sharing one routing table and message queue via a
+`ClientHandle` abstraction (`TCPClientHandle`/`WSClientHandle`) — same
+handshake, same frame shapes, so a browser client and a desktop client
+on the same relay reach each other transparently. Fixed a real race
+while building it: unregistering a disconnected client now only removes
+it if its own handle is still the one on file, so a client reconnecting
+while the old connection's cleanup is still running can't have its new
+registration wiped out. Verified in `test_ws_relay_smoke.py`, including
+the actual interop case (a TCP client and a WebSocket client on the same
+relay exchanging a real handshake).
 
-### 7c — Browser crypto + storage (not started)
-The big one: reimplementing `crypto.py`'s X25519/AES-GCM/ratchet in
-JavaScript via a well-audited library (e.g. libsodium.js/WASM — not
-hand-rolled crypto), IndexedDB as the browser equivalent of the
-encrypted SQLite store, and a WebSocket-based `network.py` equivalent.
-Realistically its own multi-session effort, the same way Phases 1-2 were
-the foundation everything else was built on.
+### 7c — Browser crypto + storage ✅ done
+`webapp/static/js/crypto.js` is a byte-for-byte port of `crypto.py`:
+X25519 via native WebCrypto, the 3-DH handshake, the symmetric ratchet,
+AES-256-GCM/CTR, HKDF — and, since WebCrypto has no native scrypt, a
+from-spec implementation (Salsa20/8 + BlockMix + ROMix, WebCrypto's
+PBKDF2 handling the outer calls). This got the most scrutiny of anything
+in Phase 7, per an explicit ask to prioritize crypto correctness over
+feature breadth: `webapp/static/test_crypto.html` checks it against
+**three of scrypt's own official RFC 7914 test vectors** (independent
+ground truth) and against 20+ vectors generated directly from
+`crypto.py` for every custom primitive — fingerprint, HKDF, the
+handshake, the ratchet, `dh_proof`, `derive_split_keys` — confirming
+byte-for-byte identical output between the browser and desktop
+implementations for identical input, plus round-trip and
+security-property checks (out-of-order rejection, tamper detection,
+wrong-key-gives-garbage for the deniable backup cipher). `storage.js`
+(IndexedDB) and `network.js` (WebSocket-relay-only, since a browser can't
+open raw TCP/UDP for direct-LAN) complete the port. Two real bugs were
+caught and fixed during this verification pass: a scrypt final step that
+computed a result and then discarded it in favor of a redundant second
+call, and dead/broken code in the X25519 public-key-from-private-key
+derivation left over from an earlier exploration.
 
-### 7d — Browser UI (not started)
-An HTML/JS chat interface covering what `gui.py` covers, starting with
-text chat and expanding the same way the desktop phases did.
+### 7d — Browser UI ✅ done
+`webapp/static/index.html` + `app.js`: sign up or log in, see a real
+12-word recovery phrase once (shown inline rather than via `alert()` —
+JS dialogs are both a worse UX for copying a phrase and impossible to
+drive from an automated test), add a contact by pasting their card, see
+and verify the same safety number your contact sees, and chat. Verified
+two ways: `webapp/static/test_e2e.html` drives the real
+storage/network/auth stack (two independent identities against live
+accounts and relay servers) through 13 checks — signup, login, the full
+message round trip both directions, encrypted local history, and the
+complete recovery-phrase reset flow — and a manual pass across two real
+browser tabs confirmed live bidirectional delivery and that a received
+message survives a full page reload (recovered from encrypted IndexedDB,
+not just in-memory state). Known gaps versus the desktop UI: no
+queue-and-retry while a handshake is in flight (a fixed ~500ms wait
+instead), and no per-contact multi-relay assignment (one relay per
+login).
 
 ### 7e — Calls, rich content, and AI in-browser (not started)
 WebRTC/`getUserMedia` for calls, `<input type=file>`/canvas for
