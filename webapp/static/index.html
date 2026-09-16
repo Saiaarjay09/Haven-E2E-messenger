@@ -59,7 +59,22 @@
     <button id="login-btn">Log in</button>
     <button id="signup-btn">Create account</button>
   </div>
+  <p style="margin-top:10px;"><a href="#" id="forgot-password-link" style="font-size:13px;">Forgot password?</a></p>
   <div id="login-status"></div>
+
+  <div id="forgot-password-row" hidden>
+    <hr>
+    <p style="font-size:13px;color:#555;">Enter the username above, plus the 12-word recovery phrase you
+    were shown when you created the account, to set a new password.</p>
+    <label>Recovery phrase</label>
+    <input id="recovery-phrase-input" placeholder="12 words, separated by spaces">
+    <label>New password</label>
+    <input id="new-password-input" type="password" autocomplete="new-password">
+    <div>
+      <button id="reset-password-btn">Reset password</button>
+      <button id="forgot-password-cancel">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <div id="app-screen" hidden>
@@ -111,10 +126,10 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=5"></script>
-<script src="js/storage.js?v=5"></script>
-<script src="js/network.js?v=5"></script>
-<script src="js/auth.js?v=5"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/crypto.js?v=6"></script>
+<script src="js/storage.js?v=6"></script>
+<script src="js/network.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>

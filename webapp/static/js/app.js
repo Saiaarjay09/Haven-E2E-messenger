@@ -79,6 +79,33 @@
     }
   }
 
+  function openForgotPassword() {
+    el("forgot-password-row").hidden = false;
+    el("recovery-phrase-input").value = "";
+    el("new-password-input").value = "";
+    el("recovery-phrase-input").focus();
+  }
+
+  async function doResetPassword() {
+    const username = el("username").value.trim();
+    const recoveryPhrase = el("recovery-phrase-input").value.trim();
+    const newPassword = el("new-password-input").value;
+    const accountsUrl = el("accounts-url").value.trim() || defaultAccountsUrl();
+    if (!username || !recoveryPhrase || !newPassword) {
+      return setStatus("Enter your username above, plus your recovery phrase and a new password.");
+    }
+    state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
+    try {
+      const { identity } = await state.accountsClient.resetPassword(username, recoveryPhrase, newPassword);
+      el("forgot-password-row").hidden = true;
+      setStatus("");
+      await onLoggedIn(identity, username);
+    } catch (e) {
+      console.error("password reset failed:", e);
+      setStatus(e.message);
+    }
+  }
+
   async function onLoggedIn(identity, username) {
     state.identity = identity;
     state.username = username;
@@ -233,6 +260,12 @@
     el("relay-url").placeholder = defaultRelayWsUrl();
     el("signup-btn").onclick = doSignup;
     el("login-btn").onclick = doLogin;
+    el("forgot-password-link").onclick = (e) => {
+      e.preventDefault();
+      openForgotPassword();
+    };
+    el("forgot-password-cancel").onclick = () => (el("forgot-password-row").hidden = true);
+    el("reset-password-btn").onclick = doResetPassword;
     el("send-btn").onclick = sendMessage;
     el("message-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
