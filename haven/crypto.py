@@ -240,6 +240,23 @@ def derive_key_from_password(password: str, salt: bytes, length: int = 32) -> by
     return Scrypt(salt=salt, length=length, n=2**15, r=8, p=1).derive(password.encode("utf-8"))
 
 
+def derive_split_keys(password: str, salt: bytes) -> tuple[bytes, bytes]:
+    """Zero-knowledge split for the hosted web app (webapp/): ONE expensive
+    scrypt derivation, then HKDF domain-separation into two independent
+    keys — an auth_key sent to the server to prove who you are, and an
+    enc_key that never leaves the client and is the only thing that can
+    decrypt your identity blob. This is the same pattern Bitwarden and
+    similar zero-knowledge services use: even a fully compromised server
+    (database dump AND live code) that captures every auth_key it's ever
+    seen still cannot derive enc_key from it — HKDF is one-way, and the
+    two outputs are cryptographically independent. Returns (auth_key,
+    enc_key)."""
+    combined = derive_key_from_password(password, salt, length=32)
+    auth_key = _hkdf(combined, info=b"webapp-auth-key")
+    enc_key = _hkdf(combined, info=b"webapp-enc-key")
+    return auth_key, enc_key
+
+
 def encrypt_authenticated(key: bytes, plaintext: bytes, aad: bytes = b"") -> bytes:
     """AES-256-GCM, used for the local identity file: we WANT a clear
     'wrong password' failure here (it's a login prompt, not a backup we're

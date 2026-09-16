@@ -1,3 +1,7 @@
+# Dependencies for the DESKTOP app (haven/, main.py). The hosted web
+# accounts service (webapp/) has its own separate requirements file —
+# see webapp/requirements.txt.
+
 # Core (Phase 1): identity keys, ratchet encryption, backups
 cryptography
 

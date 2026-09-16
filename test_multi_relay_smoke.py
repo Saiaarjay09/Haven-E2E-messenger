@@ -35,7 +35,7 @@ def wait_until(predicate, timeout=8.0, interval=0.05):
 
 
 # --- 1. contact card round-trips an embedded relay ---
-alice = identity.create_account("alice", "alice-password-123")
+alice, _ = identity.create_account("alice", "alice-password-123")
 card_no_relay = identity.make_contact_card(alice)
 uname, pub, rhost, rport = identity.parse_contact_card(card_no_relay)
 assert (rhost, rport) == (None, None)
@@ -47,7 +47,7 @@ assert (uname, pub, rhost, rport) == ("alice", alice.identity.public_bytes, "rel
 print("confirmed: a contact card with a relay round-trips host+port exactly:", card_with_relay)
 
 # --- 2. config.py: relay list persistence + legacy migration ---
-bob = identity.create_account("bob", "bob-password-456")
+bob, _ = identity.create_account("bob", "bob-password-456")
 # simulate an old single relay_host/relay_port from before multi-relay existed
 config.save(bob.data_dir, {"relay_host": "old.example.com", "relay_port": 1111})
 migrated = config.list_relays(bob.data_dir)
@@ -65,7 +65,7 @@ assert legacy_key not in config.list_relays(bob.data_dir)
 print("confirmed: relays can be added and removed independently, list persists to disk")
 
 # --- 3. storage.py: per-contact relay assignment ---
-carol = identity.create_account("carol", "carol-password-789")
+carol, _ = identity.create_account("carol", "carol-password-789")
 bob_store = storage.Store(bob.data_dir, bob.identity)
 carol_fp = "deadbeef" * 8  # fingerprint format is opaque to storage.py, any string works for this check
 bob_store.upsert_contact(carol_fp, "carol", carol.identity.public_bytes, "", 0, "127.0.0.1", 19002)
@@ -111,7 +111,7 @@ bob_net.attach_relay(RELAY_A_KEY, bob_relay)
 bob_relay.start()
 assert wait_until(lambda: bob_relay.connected.is_set())
 
-carol2 = identity.create_account("carol2", "carol2-password-000")
+carol2, _ = identity.create_account("carol2", "carol2-password-000")
 carol_store = storage.Store(carol2.data_dir, carol2.identity)
 carol_net = network.NetworkManager(carol2.identity, "carol2", carol_store)
 carol_relay = relay_client.RelayClient(carol2.identity, "carol2", "127.0.0.1", RELAY_B_PORT)
@@ -142,7 +142,7 @@ print("confirmed: each message reached the right contact through their own relay
 
 # Trying to reach a THIRD identity through the wrong relay (one they were
 # never registered on) must fail rather than silently succeeding.
-dave = identity.create_account("dave", "dave-password-000")
+dave, _ = identity.create_account("dave", "dave-password-000")
 fp_dave_wrong = alice_net.connect_relay(dave.identity.public_bytes, "dave", relay_key=RELAY_A_KEY)
 time.sleep(1.0)
 assert not alice_net.is_connected(fp_dave_wrong), "should not connect — dave was never registered on relay A"

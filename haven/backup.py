@@ -19,7 +19,7 @@ import json
 import os
 import sqlite3
 
-from . import crypto, identity as identity_mod
+from . import crypto, identity as identity_mod, recovery
 
 MAGIC = "HAVEN-BACKUP-V1"
 
@@ -90,23 +90,25 @@ def restore_backup(path: str, password: str) -> dict:
     return bundle
 
 
-def apply_restored_bundle(bundle: dict, new_password: str) -> identity_mod.Account:
+def apply_restored_bundle(bundle: dict, new_password: str) -> tuple[identity_mod.Account, str]:
+    """Returns (account, recovery_phrase) — restoring a backup sets up a
+    brand new recovery.enc too (same idea as a fresh create_account: a
+    fresh phrase for a fresh local password), since the backup itself
+    carried no recovery secret of its own."""
     username = bundle["username"]
     identity_key = crypto.KeyPair.from_private_bytes(bytes.fromhex(bundle["identity_private_key"]))
+    created_at = bundle["created_at"]
 
     d = identity_mod.account_dir(username)
     d.mkdir(parents=True, exist_ok=True)
-    salt = os.urandom(16)
-    key = crypto.derive_key_from_password(new_password, salt)
-    payload = json.dumps(
-        {"private_key": identity_key.private_bytes.hex(), "created_at": bundle["created_at"]}
-    ).encode("utf-8")
-    blob = crypto.encrypt_authenticated(key, payload, aad=username.encode("utf-8"))
-    (d / "identity.enc").write_bytes(salt + blob)
+    identity_mod._write_unlock_blob(d / "identity.enc", new_password, username, identity_key, created_at)
 
-    account = identity_mod.Account(
-        username=username, identity=identity_key, created_at=bundle["created_at"], data_dir=d
+    recovery_phrase = recovery.generate_recovery_phrase()
+    identity_mod._write_unlock_blob(
+        d / "recovery.enc", recovery.normalize_phrase(recovery_phrase), username, identity_key, created_at
     )
+
+    account = identity_mod.Account(username=username, identity=identity_key, created_at=created_at, data_dir=d)
 
     from . import storage as storage_mod
 
@@ -120,4 +122,4 @@ def apply_restored_bundle(bundle: dict, new_password: str) -> identity_mod.Accou
     for m in bundle["messages"]:
         store.save_message(m["fingerprint"], m["direction"], m["text"], kind=m["kind"])
     store.close()
-    return account
+    return account, recovery_phrase

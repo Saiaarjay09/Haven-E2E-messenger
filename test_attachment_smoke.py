@@ -49,7 +49,7 @@ def wait_until(predicate, timeout=8.0, interval=0.05):
 
 class Client:
     def __init__(self, username, password):
-        self.account = identity.create_account(username, password)
+        self.account, _ = identity.create_account(username, password)
         self.store = storage.Store(self.account.data_dir, self.account.identity)
         self.net = network.NetworkManager(self.account.identity, username, self.store)
         self.received = []  # (kind, text)

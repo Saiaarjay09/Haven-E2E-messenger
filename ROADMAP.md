@@ -1,11 +1,83 @@
 # Roadmap
 
-All six planned phases are built: real E2E crypto, local accounts,
-encrypted storage/backups, LAN discovery, a self-hosted relay, group
-chats, rich content, calls, and on-device AI. What follows is a record of
+All six originally-planned phases are built: real E2E crypto, local
+accounts, encrypted storage/backups, LAN discovery, a self-hosted relay,
+group chats, rich content, calls, and on-device AI. A seventh phase — a
+hosted web app — was added afterward and is in progress (7a done, 7b-7e
+ahead; see below and `webapp/README.md`). What follows is a record of
 what got built in each phase, its known tradeoffs, and the cross-cutting
 hardening still worth doing before trusting this with real money-related
 conversations at scale.
+
+## Desktop "forgot password" — recovery phrases ✅ done
+Added alongside Phase 7 (a direct answer to "what if I forget my
+password," independent of the web app work): `haven/recovery.py`
+generates a 12-word phrase from the standard BIP39 English wordlist at
+account creation, shown exactly once. `identity.py` encrypts a SECOND,
+independent copy of your identity key with a phrase-derived key
+alongside the usual password-derived one (`identity.enc` +
+`recovery.enc`) — either secret alone unlocks the account, and resetting
+your password via the phrase re-encrypts `identity.enc` under the new
+password while leaving `recovery.enc` (and the phrase) valid for next
+time. This is the same recovery model crypto wallets use (a lost phrase
+*and* a lost password together mean the account is gone for good, by
+design — there is deliberately no third way in, e.g. no email reset,
+since that would need a server and undermine the whole local-first
+model). Verified in `test_recovery_smoke.py`.
+
+## Phase 7 — Hosted web app (in progress)
+
+### 7a — Accounts service ✅ done
+`webapp/accounts_server.py` (FastAPI) + `webapp/accounts_db.py`
+(SQLite) provide globally unique usernames (a real central registry —
+new centralized state the local-first desktop app never needed, and the
+direct cost of "no two Haven users anywhere can share a name") and
+zero-knowledge password authentication: `crypto.derive_split_keys()`
+splits one password-derived key into an `auth_key` the server sees and
+bcrypt-hashes, and an `enc_key` that never leaves the browser and alone
+can decrypt the stored identity blob — the same pattern Bitwarden uses,
+chosen so that even a fully compromised server can't decrypt anyone's
+identity key going forward, only gate logins. The same split pattern
+implements "forgot password" server-side, keyed by the recovery phrase
+instead. Verified against a real running server process in
+`test_webapp_accounts_smoke.py` — signup, case-insensitive uniqueness,
+login, recovery-based reset, and that the server's database never holds
+a plaintext password, phrase, or private key.
+
+**The tradeoff this whole phase accepts** (stated in full in
+`webapp/README.md`, worth repeating here): a browser is sent fresh code
+by a server on every page load, so browser-based E2E crypto means
+trusting that server's code fresh each time — a compromised or dishonest
+server can serve modified JavaScript that quietly leaks keys, in a way
+no ordinary user could detect. This is a real, irreducible risk that a
+native app simply doesn't have (its code doesn't change without you
+updating it). It's why Signal/WhatsApp avoid pure browser-based crypto as
+a primary client. Phase 7 was scoped and built with this tradeoff
+explicitly accepted, not overlooked.
+
+### 7b — WebSocket relay (not started)
+Browsers can't open raw TCP sockets, so `relay_server.py`'s protocol
+needs a WebSocket transport alongside (or instead of) TCP. The message
+format itself doesn't need to change.
+
+### 7c — Browser crypto + storage (not started)
+The big one: reimplementing `crypto.py`'s X25519/AES-GCM/ratchet in
+JavaScript via a well-audited library (e.g. libsodium.js/WASM — not
+hand-rolled crypto), IndexedDB as the browser equivalent of the
+encrypted SQLite store, and a WebSocket-based `network.py` equivalent.
+Realistically its own multi-session effort, the same way Phases 1-2 were
+the foundation everything else was built on.
+
+### 7d — Browser UI (not started)
+An HTML/JS chat interface covering what `gui.py` covers, starting with
+text chat and expanding the same way the desktop phases did.
+
+### 7e — Calls, rich content, and AI in-browser (not started)
+WebRTC/`getUserMedia` for calls, `<input type=file>`/canvas for
+images/GIFs — smaller ports of `calls.py`/`attachments.py` once 7c
+exists. On-device AI in-browser (Whisper/an LLM via WASM) is possible in
+principle but meaningfully heavier than the desktop app's native
+libraries — likely reduced scope compared to Phase 6, if built at all.
 
 ## Phase 2 — Reach beyond one Wi-Fi network ✅ done
 Added a self-hosted relay server (`haven/relay_server.py`, run with

@@ -27,8 +27,8 @@ threading.Thread(target=relay.start, daemon=True).start()
 time.sleep(0.3)
 print("relay server started on port", RELAY_PORT)
 
-alice = identity.create_account("alice", "alice-password-123")
-bob = identity.create_account("bob", "bob-password-456")
+alice, _ = identity.create_account("alice", "alice-password-123")
+bob, _ = identity.create_account("bob", "bob-password-456")
 
 alice_store = storage.Store(alice.data_dir, alice.identity)
 bob_store = storage.Store(bob.data_dir, bob.identity)

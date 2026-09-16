@@ -17,7 +17,7 @@ from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
 
-from . import crypto
+from . import crypto, recovery
 
 DATA_ROOT = Path.home() / ".haven"
 
@@ -31,6 +31,10 @@ class AccountExists(Exception):
 
 
 class NoSuchAccount(Exception):
+    pass
+
+
+class InvalidRecoveryPhrase(Exception):
     pass
 
 
@@ -73,22 +77,73 @@ def account_dir(username: str) -> Path:
     return DATA_ROOT / username
 
 
-def create_account(username: str, password: str) -> Account:
+def _write_unlock_blob(path: Path, secret: str, username: str, identity: crypto.KeyPair, created_at: float) -> None:
+    """Writes one password-or-phrase-protected copy of the identity key.
+    identity.enc and recovery.enc are two independent copies of the SAME
+    private key, encrypted with two independent secrets — either one alone
+    unlocks the account, which is exactly what makes the recovery phrase
+    a working substitute when the password is forgotten."""
+    salt = os.urandom(16)
+    key = crypto.derive_key_from_password(secret, salt)
+    payload = json.dumps(
+        {"private_key": identity.private_bytes.hex(), "created_at": created_at}
+    ).encode("utf-8")
+    blob = crypto.encrypt_authenticated(key, payload, aad=username.encode("utf-8"))
+    path.write_bytes(salt + blob)
+
+
+def _read_unlock_blob(path: Path, secret: str, username: str) -> dict:
+    raw = path.read_bytes()
+    salt, blob = raw[:16], raw[16:]
+    key = crypto.derive_key_from_password(secret, salt)
+    payload = crypto.decrypt_authenticated(key, blob, aad=username.encode("utf-8"))
+    return json.loads(payload.decode("utf-8"))
+
+
+def create_account(username: str, password: str) -> tuple[Account, str]:
+    """Returns (account, recovery_phrase). The recovery phrase is generated
+    once, here, and is never written to disk in plaintext anywhere — only
+    the caller sees it (show it to the user immediately and don't keep it
+    around in memory longer than needed), matching how any recovery-phrase
+    system (crypto wallets, etc.) is supposed to work: if this phrase and
+    the password are both lost, the account is unrecoverable by design."""
     d = account_dir(username)
     if (d / "identity.enc").exists():
         raise AccountExists(username)
     d.mkdir(parents=True, exist_ok=True)
 
     identity = crypto.KeyPair.generate()
-    salt = os.urandom(16)
-    key = crypto.derive_key_from_password(password, salt)
     created_at = time.time()
-    payload = json.dumps(
-        {"private_key": identity.private_bytes.hex(), "created_at": created_at}
-    ).encode("utf-8")
-    blob = crypto.encrypt_authenticated(key, payload, aad=username.encode("utf-8"))
+    _write_unlock_blob(d / "identity.enc", password, username, identity, created_at)
 
-    (d / "identity.enc").write_bytes(salt + blob)
+    recovery_phrase = recovery.generate_recovery_phrase()
+    _write_unlock_blob(
+        d / "recovery.enc", recovery.normalize_phrase(recovery_phrase), username, identity, created_at
+    )
+
+    account = Account(username=username, identity=identity, created_at=created_at, data_dir=d)
+    return account, recovery_phrase
+
+
+def reset_password_with_recovery(username: str, recovery_phrase: str, new_password: str) -> Account:
+    """The 'forgot password' flow: unlock with the recovery phrase instead
+    of the password, then re-encrypt identity.enc under a brand-new
+    password. recovery.enc is left untouched — the same phrase keeps working
+    for next time, since the underlying identity key never changed."""
+    d = account_dir(username)
+    recovery_path = d / "recovery.enc"
+    if not recovery_path.exists():
+        raise NoSuchAccount(username)
+
+    normalized = recovery.normalize_phrase(recovery_phrase)
+    try:
+        data = _read_unlock_blob(recovery_path, normalized, username)
+    except InvalidTag as exc:
+        raise InvalidRecoveryPhrase(username) from exc
+
+    identity = crypto.KeyPair.from_private_bytes(bytes.fromhex(data["private_key"]))
+    created_at = data["created_at"]
+    _write_unlock_blob(d / "identity.enc", new_password, username, identity, created_at)
     return Account(username=username, identity=identity, created_at=created_at, data_dir=d)
 
 
@@ -98,15 +153,11 @@ def sign_in(username: str, password: str) -> Account:
     if not enc_path.exists():
         raise NoSuchAccount(username)
 
-    raw = enc_path.read_bytes()
-    salt, blob = raw[:16], raw[16:]
-    key = crypto.derive_key_from_password(password, salt)
     try:
-        payload = crypto.decrypt_authenticated(key, blob, aad=username.encode("utf-8"))
+        data = _read_unlock_blob(enc_path, password, username)
     except InvalidTag as exc:
         raise WrongPassword(username) from exc
 
-    data = json.loads(payload.decode("utf-8"))
     identity = crypto.KeyPair.from_private_bytes(bytes.fromhex(data["private_key"]))
     return Account(username=username, identity=identity, created_at=data["created_at"], data_dir=d)
 

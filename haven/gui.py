@@ -86,6 +86,9 @@ class LoginScreen(ttk.Frame):
         ttk.Button(btns, text="Restore from backup…", command=self._restore).grid(
             row=0, column=2, padx=4
         )
+        ttk.Button(btns, text="Forgot password?", command=self._forgot_password).grid(
+            row=0, column=3, padx=4
+        )
 
         existing = identity.list_accounts()
         if existing:
@@ -134,10 +137,11 @@ class LoginScreen(ttk.Frame):
             self.status_var.set("Use a password of at least 6 characters.")
             return
         try:
-            acct = identity.create_account(u, p)
+            acct, recovery_phrase = identity.create_account(u, p)
         except identity.AccountExists:
             self.status_var.set("That username already exists on this machine. Sign in instead.")
             return
+        self._show_recovery_phrase(recovery_phrase)
         self.on_success(acct)
 
     def _restore(self):
@@ -161,8 +165,71 @@ class LoginScreen(ttk.Frame):
         )
         if not new_pw:
             return
-        acct = backup.apply_restored_bundle(bundle, new_pw)
+        acct, recovery_phrase = backup.apply_restored_bundle(bundle, new_pw)
+        self._show_recovery_phrase(recovery_phrase)
         messagebox.showinfo("Restored", f"Account '{acct.username}' restored. Sign in now.")
+
+    def _show_recovery_phrase(self, phrase: str):
+        """Shown exactly once, right after the phrase is generated — it is
+        never written to disk in plaintext anywhere, so this dialog is the
+        only chance to record it. Deliberately modal (grab_set) so it can't
+        be missed or dismissed by accident."""
+        top = tk.Toplevel(self)
+        top.title("Your recovery phrase")
+        top.grab_set()
+        ttk.Label(
+            top,
+            text="Write this down and keep it somewhere safe (not a screenshot on this\n"
+            "device). It's the ONLY way back into your account if you forget your\n"
+            "password — Haven cannot recover it any other way, and cannot show it\n"
+            "to you again after you close this window.",
+            justify="left",
+            foreground="#b00",
+        ).pack(padx=16, pady=(16, 8))
+        phrase_box = tk.Text(top, height=3, width=50, wrap="word")
+        phrase_box.insert("1.0", phrase)
+        phrase_box.configure(state="disabled")
+        phrase_box.pack(padx=16, pady=8)
+        confirmed = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            top, text="I've written this down somewhere safe", variable=confirmed
+        ).pack(padx=16, pady=(0, 8))
+        done_btn = ttk.Button(top, text="Continue", state="disabled", command=top.destroy)
+        done_btn.pack(pady=(0, 16))
+        confirmed.trace_add(
+            "write", lambda *a: done_btn.configure(state="normal" if confirmed.get() else "disabled")
+        )
+        top.wait_window()
+
+    def _forgot_password(self):
+        u = simpledialog.askstring("Forgot password", "Username:")
+        if not u:
+            return
+        if u not in identity.list_accounts():
+            self.status_var.set(f"No local account named '{u}' on this machine.")
+            return
+        phrase = simpledialog.askstring(
+            "Forgot password",
+            "Enter your 12-word recovery phrase (shown once when you created this account):",
+        )
+        if not phrase:
+            return
+        new_pw = simpledialog.askstring("Forgot password", "Choose a new password:", show="*")
+        if not new_pw:
+            return
+        if len(new_pw) < 6:
+            self.status_var.set("Use a password of at least 6 characters.")
+            return
+        try:
+            acct = identity.reset_password_with_recovery(u, phrase, new_pw)
+        except identity.InvalidRecoveryPhrase:
+            self.status_var.set("That recovery phrase doesn't match this account.")
+            return
+        except identity.NoSuchAccount:
+            self.status_var.set(f"No local account named '{u}' on this machine.")
+            return
+        messagebox.showinfo("Password reset", f"Password reset for '{u}'. Signing you in now.")
+        self.on_success(acct)
 
 
 # --------------------------------------------------------------------------

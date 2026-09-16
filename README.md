@@ -12,6 +12,8 @@ discovery, a self-hosted relay for reaching friends off your LAN with
 offline message queuing, real end-to-end encrypted group chats,
 images/GIFs/stickers/links, voice and video calls, and on-device AI
 (speech-to-text, translation, a local assistant, and live call captions).
+Work has also started on a hosted web app (global unique usernames +
+account recovery are live; see `webapp/README.md`).
 
 ## Run it (LAN only, no setup)
 
@@ -29,6 +31,14 @@ machine for a quick test — see `test_smoke.py` for a fully scripted,
 no-GUI version of this). Create an account on each, and within a few
 seconds each should see the other appear in the "Nearby & contacts" list.
 Click a name to open a chat.
+
+When you create an account, Haven shows you a **12-word recovery
+phrase** exactly once — write it down somewhere safe. It's the only way
+back in if you forget your password (click **Forgot password?** on the
+sign-in screen and enter it there); Haven cannot recover your account
+any other way, and can't show you the phrase again after that first
+screen. See `test_recovery_smoke.py` for this verified end-to-end,
+including that the phrase is never written to disk in plaintext.
 
 ## Reaching friends who aren't on your LAN (Phase 2)
 
@@ -238,6 +248,26 @@ in a fake key in the middle — the same trust model Signal uses.
   calls. Verified against real synthesized speech in `test_ai_smoke.py`:
   correct transcription, correct language detection, correct translation,
   and a real local-LLM response.
+- **Recovery phrases**: `haven/recovery.py` generates a 12-word phrase
+  (the standard BIP39 wordlist) at account creation, used to encrypt a
+  second independent copy of your identity key — either the password or
+  the phrase alone unlocks the account. Verified in
+  `test_recovery_smoke.py`: both paths recover the identical key, a
+  password reset via the phrase actually invalidates the old password,
+  a wrong phrase is rejected without touching the account, and the
+  phrase is never written to disk in plaintext anywhere.
+- **Hosted web accounts service (Phase 7a)**: `webapp/` is a real
+  zero-knowledge accounts server (FastAPI) — global username uniqueness
+  and password auth where the server never sees your password or
+  anything that could decrypt your identity blob (the same auth-key/
+  encryption-key split pattern Bitwarden uses). Verified against a real
+  running server process in `test_webapp_accounts_smoke.py`: signup,
+  case-insensitive uniqueness, login, recovery-phrase reset, and that the
+  server's own database never contains a plaintext password, phrase, or
+  private key. See `webapp/README.md` for what this is (and isn't) yet —
+  the browser-based chat client itself is a much larger, separate piece
+  of work still ahead, and for the real, unavoidable security tradeoff
+  browser-delivered crypto accepts that the desktop app doesn't have.
 
 ## Known limitations
 
@@ -275,6 +305,12 @@ in a fake key in the middle — the same trust model Signal uses.
 - Metadata (who's messaging whom, when) is visible to whoever runs the
   relay, by design for this phase — see "content-private, metadata
   best-effort" in `ROADMAP.md`.
+- If both your password AND your recovery phrase are lost, the account
+  is unrecoverable by design — same as any crypto-wallet-style recovery
+  phrase, there is deliberately no third way in.
+- The hosted web accounts service (`webapp/`) has no actual chat client
+  yet — see `webapp/README.md` for the (large) remaining scope, and for
+  the real security tradeoff it accepts that the desktop app doesn't have.
 
 ## Project layout
 
@@ -293,14 +329,22 @@ haven/
   attachments.py   image/GIF/sticker encode-decode + size cap (Phase 4)
   calls.py         call signaling + audio/video streaming (Phase 5)
   ai.py            local speech-to-text, translation, assistant (Phase 6)
+  recovery.py      recovery-phrase generation (BIP39 wordlist)
+  data/wordlist.txt  the 2048-word BIP39 English wordlist
   gui.py           Tkinter UI
-main.py                    entry point
-requirements.txt           pip dependencies for every phase
-test_smoke.py              headless end-to-end test: direct LAN handshake, messaging, backups
-test_relay_smoke.py        headless end-to-end test: relay handshake + offline queuing
-test_group_smoke.py        headless end-to-end test: group create/message/add/remove + key rotation
-test_attachment_smoke.py   headless end-to-end test: image/GIF round trip over DM + group
-test_call_smoke.py         headless end-to-end test: call signaling + audio/video chunk transport
-test_ai_smoke.py           headless end-to-end test: STT + translation + live captions + local LLM
-test_multi_relay_smoke.py  headless end-to-end test: per-contact relay assignment across two live relays
+webapp/                    hosted accounts service (Phase 7a) — see webapp/README.md
+  accounts_server.py       FastAPI app: signup/login/forgot-password
+  accounts_db.py           SQLite storage for hosted accounts
+  requirements.txt         webapp-only dependencies (fastapi, uvicorn, bcrypt)
+main.py                        entry point
+requirements.txt               pip dependencies for the desktop app
+test_smoke.py                  headless end-to-end test: direct LAN handshake, messaging, backups
+test_relay_smoke.py            headless end-to-end test: relay handshake + offline queuing
+test_group_smoke.py            headless end-to-end test: group create/message/add/remove + key rotation
+test_attachment_smoke.py       headless end-to-end test: image/GIF round trip over DM + group
+test_call_smoke.py             headless end-to-end test: call signaling + audio/video chunk transport
+test_ai_smoke.py               headless end-to-end test: STT + translation + live captions + local LLM
+test_multi_relay_smoke.py      headless end-to-end test: per-contact relay assignment across two live relays
+test_recovery_smoke.py         headless end-to-end test: recovery-phrase password reset
+test_webapp_accounts_smoke.py  headless end-to-end test: hosted signup/login/recovery over real HTTP
 ```

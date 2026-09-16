@@ -1,0 +1,8 @@
+# Dependencies for the hosted accounts service only (webapp/) — not
+# needed to run the desktop app in haven/.
+fastapi
+uvicorn[standard]
+bcrypt
+
+# For test_webapp_accounts_smoke.py's simulated-browser test client only.
+requests

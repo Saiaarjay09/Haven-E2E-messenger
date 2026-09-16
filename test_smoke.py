@@ -14,8 +14,8 @@ tmp = Path(tempfile.mkdtemp())
 identity.DATA_ROOT = tmp
 print("test data root:", tmp)
 
-alice = identity.create_account("alice", "alice-password-123")
-bob = identity.create_account("bob", "bob-password-456")
+alice, _ = identity.create_account("alice", "alice-password-123")
+bob, _ = identity.create_account("bob", "bob-password-456")
 print("created accounts:", alice.username, bob.username)
 
 alice_store = storage.Store(alice.data_dir, alice.identity)
