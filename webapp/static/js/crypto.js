@@ -257,7 +257,16 @@ const Haven = (() => {
   // ---------------------------------------------------------------------
 
   async function hmacSha256(keyBytes, msgBytes) {
-    const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    // WebCrypto refuses to import a zero-length HMAC key outright ("HMAC
+    // key data must not be empty"), even though HMAC's own construction
+    // handles an empty key the same as any short one: zero-padded to the
+    // block size. RFC 7914's own official scrypt test vectors include an
+    // empty password (which becomes pbkdf2()'s empty HMAC key below), so
+    // this does come up. A 64-byte all-zero key is exactly what HMAC
+    // would build internally from an empty key, so substituting it
+    // directly gives an identical result without hitting that restriction.
+    const effectiveKey = keyBytes.length === 0 ? new Uint8Array(64) : keyBytes;
+    const key = await crypto.subtle.importKey("raw", effectiveKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const sig = await crypto.subtle.sign("HMAC", key, msgBytes);
     return new Uint8Array(sig);
   }
@@ -402,14 +411,32 @@ const Haven = (() => {
   // test vectors in test_crypto.html, not just against the Python side.
   // ---------------------------------------------------------------------
 
+  // Built directly from HMAC-SHA256 (RFC 2898's own PBKDF2 construction)
+  // rather than crypto.subtle's native PBKDF2 deriveBits. Firefox refuses
+  // to derive more than 2048 bits (256 bytes) from a single native
+  // PBKDF2 call and throws a generic OperationError for anything larger
+  // (https://bugzilla.mozilla.org/show_bug.cgi?id=1469482) — Chromium has
+  // no such limit, which is why this only ever showed up for real
+  // Firefox users. scrypt (RFC 7914 §6) needs up to 128*r*p bytes from a
+  // single PBKDF2 call, comfortably over that cap for this app's
+  // parameters. HMAC-SHA256 itself has no such length restriction since
+  // each block is a fixed 32-byte HMAC output computed independently.
   async function pbkdf2(passwordBytes, saltBytes, iterations, lengthBytes) {
-    const key = await crypto.subtle.importKey("raw", passwordBytes, "PBKDF2", false, ["deriveBits"]);
-    const bits = await crypto.subtle.deriveBits(
-      { name: "PBKDF2", hash: "SHA-256", salt: saltBytes, iterations },
-      key,
-      lengthBytes * 8
-    );
-    return new Uint8Array(bits);
+    const hLen = 32;
+    const numBlocks = Math.ceil(lengthBytes / hLen);
+    const blocks = [];
+    for (let i = 1; i <= numBlocks; i++) {
+      const blockIndex = new Uint8Array(4);
+      new DataView(blockIndex.buffer).setUint32(0, i, false); // big-endian, per RFC 2898
+      let u = await hmacSha256(passwordBytes, concatBytes(saltBytes, blockIndex));
+      let t = u;
+      for (let c = 1; c < iterations; c++) {
+        u = await hmacSha256(passwordBytes, u);
+        t = xorBytes(t, u);
+      }
+      blocks.push(t);
+    }
+    return concatBytes(...blocks).slice(0, lengthBytes);
   }
 
   function salsa20_8(input) {
