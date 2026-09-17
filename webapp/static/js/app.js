@@ -16,6 +16,7 @@
     store: null,
     relay: null,
     groupManager: null,
+    callManager: null,
     peers: new Map(), // fingerprint -> {username, identityPubHex}
     openFingerprint: null,
     openGroupId: null,
@@ -182,9 +183,43 @@
       refreshPeerList();
       if (state.openGroupId === groupId) renderGroupHeader(groupId);
     };
+    state.callManager = new HavenCalls.CallManager(state.net, identity, username);
+    state.callManager.onIncomingCall = (fp, callId, hasVideo) => {
+      if (fp !== state.openFingerprint) return; // known limitation: calls only surface for the currently-open chat
+      const meta = state.peers.get(fp);
+      el("incoming-call-text").textContent = `📞 Incoming ${hasVideo ? "video " : ""}call from ${meta ? meta.username : fp}`;
+      el("incoming-call-banner").classList.remove("hide");
+    };
+    state.callManager.onCallState = (fp, callState) => {
+      if (fp !== state.openFingerprint) return;
+      updateCallUI(callState);
+    };
+    state.callManager.onCallError = (fp, message) => {
+      if (fp === state.openFingerprint) appendLine("sys", "Call error: " + message);
+    };
+    state.callManager.onRemoteVideoFrame = (fp, url) => {
+      if (fp !== state.openFingerprint) return;
+      const img = el("remote-video-display");
+      if (img.dataset.prevUrl) URL.revokeObjectURL(img.dataset.prevUrl);
+      img.src = url;
+      img.dataset.prevUrl = url;
+      img.hidden = false;
+    };
+    state.callManager.onLocalVideoFrame = (fp, url) => {
+      if (fp !== state.openFingerprint) return;
+      const img = el("local-video-preview");
+      if (img.dataset.prevUrl) URL.revokeObjectURL(img.dataset.prevUrl);
+      img.src = url;
+      img.dataset.prevUrl = url;
+      img.hidden = false;
+    };
     state.net.onMessage = (fp, kind, text, senderPubHex) => {
       if (kind === "group") {
         state.groupManager.handleIncoming(senderPubHex, text);
+        return;
+      }
+      if (kind === "call") {
+        state.callManager.handleIncoming(fp, text);
         return;
       }
       if (fp === state.openFingerprint) appendLine("them", text, kind);
@@ -328,6 +363,9 @@
     el("safety-number").textContent = "";
     el("verify-btn").hidden = true;
     el("group-add-member-row").hidden = true;
+    el("call-controls").hidden = true;
+    el("incoming-call-banner").classList.add("hide");
+    el("active-call-panel").classList.add("hide");
     refreshPeerList();
     renderGroupHeader(groupId);
 
@@ -346,6 +384,9 @@
     state.openGroupId = null;
     el("group-controls").hidden = true;
     el("group-add-member-row").hidden = true;
+    el("call-controls").hidden = false;
+    el("incoming-call-banner").classList.add("hide");
+    el("active-call-panel").classList.add("hide");
     const meta = state.peers.get(fingerprint);
     el("chat-title").textContent = meta ? meta.username : fingerprint;
     refreshPeerList();
@@ -416,6 +457,70 @@
     }
     el("messages").appendChild(div);
     el("messages").scrollTop = el("messages").scrollHeight;
+  }
+
+  function updateCallUI(callState) {
+    const banner = el("incoming-call-banner");
+    const panel = el("active-call-panel");
+    if (callState === "ringing_in") {
+      // handled by onIncomingCall showing the banner; nothing else to do here
+    } else if (callState === "ringing_out") {
+      banner.classList.add("hide");
+      panel.classList.remove("hide");
+      el("active-call-status").textContent = "Calling…";
+      el("call-mute-btn").hidden = true;
+    } else if (callState === "active") {
+      banner.classList.add("hide");
+      panel.classList.remove("hide");
+      el("active-call-status").textContent = "Call in progress";
+      el("call-mute-btn").hidden = false;
+      el("call-mute-btn").textContent = "Mute";
+    } else {
+      // ended / rejected / error
+      banner.classList.add("hide");
+      panel.classList.add("hide");
+      const localImg = el("local-video-preview");
+      const remoteImg = el("remote-video-display");
+      if (localImg.dataset.prevUrl) URL.revokeObjectURL(localImg.dataset.prevUrl);
+      if (remoteImg.dataset.prevUrl) URL.revokeObjectURL(remoteImg.dataset.prevUrl);
+      localImg.hidden = true;
+      remoteImg.hidden = true;
+      localImg.removeAttribute("src");
+      remoteImg.removeAttribute("src");
+      if (callState === "rejected") appendLine("sys", "Call rejected.");
+      else if (callState === "ended") appendLine("sys", "Call ended.");
+    }
+  }
+
+  async function doStartCall(video) {
+    if (!state.openFingerprint) return;
+    if (!(await ensureConnected(state.openFingerprint))) return;
+    await state.callManager.startCall(state.openFingerprint, video);
+  }
+
+  async function doAcceptCall() {
+    if (!state.openFingerprint) return;
+    el("incoming-call-banner").classList.add("hide");
+    await state.callManager.acceptCall(state.openFingerprint);
+  }
+
+  async function doRejectCall() {
+    if (!state.openFingerprint) return;
+    el("incoming-call-banner").classList.add("hide");
+    await state.callManager.rejectCall(state.openFingerprint);
+  }
+
+  async function doHangup() {
+    if (!state.openFingerprint) return;
+    await state.callManager.hangup(state.openFingerprint);
+  }
+
+  function doToggleMute() {
+    if (!state.openFingerprint) return;
+    const btn = el("call-mute-btn");
+    const nowMuted = btn.textContent !== "Unmute";
+    state.callManager.setMuted(state.openFingerprint, nowMuted);
+    btn.textContent = nowMuted ? "Unmute" : "Mute";
   }
 
   async function ensureConnected(fingerprint) {
@@ -586,5 +691,11 @@
     el("group-add-member-btn").onclick = openGroupAddMember;
     el("group-add-member-cancel").onclick = () => (el("group-add-member-row").hidden = true);
     el("group-add-member-confirm").onclick = confirmGroupAddMember;
+    el("call-voice-btn").onclick = () => doStartCall(false);
+    el("call-video-btn").onclick = () => doStartCall(true);
+    el("incoming-call-accept").onclick = doAcceptCall;
+    el("incoming-call-reject").onclick = doRejectCall;
+    el("call-hangup-btn").onclick = doHangup;
+    el("call-mute-btn").onclick = doToggleMute;
   });
 })();

@@ -39,6 +39,7 @@
   #send-btn { margin-left: 8px; padding: 8px 16px; }
   #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 140px; overflow-y: auto; }
   #emoji-picker.hide { display: none; }
+  #incoming-call-banner.hide, #active-call-panel.hide { display: none; }
   #emoji-picker button { font-size: 18px; padding: 4px; background: none; border: none; cursor: pointer; border-radius: 4px; }
   #emoji-picker button:hover { background: #eee; }
 
@@ -140,6 +141,24 @@
     <div id="chat-header">
       <div id="chat-title">Select a contact</div>
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
+      <div id="call-controls" hidden style="margin-top:4px;">
+        <button id="call-voice-btn">📞 Call</button>
+        <button id="call-video-btn">📹 Video call</button>
+      </div>
+      <div id="incoming-call-banner" class="hide" style="margin-top:6px; padding:8px; background:#fff8dc; border:1px solid #e0c860; border-radius:4px;">
+        <span id="incoming-call-text"></span>
+        <button id="incoming-call-accept">Accept</button>
+        <button id="incoming-call-reject">Reject</button>
+      </div>
+      <div id="active-call-panel" class="hide" style="margin-top:6px; padding:8px; background:#e8f4ea; border:1px solid #8cc99a; border-radius:4px;">
+        <span id="active-call-status"></span>
+        <button id="call-mute-btn">Mute</button>
+        <button id="call-hangup-btn">Hang up</button>
+        <div>
+          <img id="local-video-preview" hidden style="max-width:120px; border-radius:4px; margin-top:6px;">
+          <img id="remote-video-display" hidden style="max-width:240px; border-radius:4px; margin-top:6px; margin-left:8px;">
+        </div>
+      </div>
       <div id="group-controls" hidden style="margin-top:4px; font-size:13px;">
         <span id="group-members-label"></span>
         <button id="group-add-member-btn" style="margin-left:8px;">Add member…</button>
@@ -178,13 +197,14 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=9"></script>
-<script src="js/storage.js?v=9"></script>
-<script src="js/network.js?v=9"></script>
-<script src="js/auth.js?v=9"></script>
-<script src="js/backup.js?v=9"></script>
-<script src="js/attachments.js?v=9"></script>
-<script src="js/groups.js?v=9"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/crypto.js?v=11"></script>
+<script src="js/storage.js?v=11"></script>
+<script src="js/network.js?v=11"></script>
+<script src="js/auth.js?v=11"></script>
+<script src="js/backup.js?v=11"></script>
+<script src="js/attachments.js?v=11"></script>
+<script src="js/groups.js?v=11"></script>
+<script src="js/calls.js?v=11"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
