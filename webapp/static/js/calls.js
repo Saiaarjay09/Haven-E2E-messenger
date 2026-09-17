@@ -51,6 +51,7 @@ const HavenCalls = (() => {
       this.onCallError = null; // (fingerprint, message) => void
       this.onRemoteVideoFrame = null; // (fingerprint, blobUrl) => void
       this.onLocalVideoFrame = null; // (fingerprint, blobUrl) => void — self-view preview
+      this.onAudioChunk = null; // (fingerprint, int16Samples) => void — raw incoming PCM, for live translation (see translation.js)
 
       this.calls = new Map(); // fingerprint -> call state
     }
@@ -174,7 +175,9 @@ const HavenCalls = (() => {
       const call = this.calls.get(fingerprint);
       if (!call || call.callId !== payload.call_id) return;
       const pcm = base64ToBytes(payload.pcm_b64);
-      if (call.playChunk) call.playChunk(new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2));
+      const int16 = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2);
+      if (call.playChunk) call.playChunk(int16);
+      if (this.onAudioChunk) this.onAudioChunk(fingerprint, int16);
     }
 
     async sendVideoFrame(fingerprint, jpegBytes) {

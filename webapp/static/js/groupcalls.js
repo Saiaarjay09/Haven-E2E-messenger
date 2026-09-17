@@ -52,6 +52,7 @@ const HavenGroupCalls = (() => {
       this.onIncomingGroupCall = null; // (groupId, fromUsername, hasVideo) => void
       this.onParticipantsChanged = null; // (groupId) => void — join/leave/speaking/video-frame updates
       this.onCallError = null; // (groupId, message) => void
+      this.onAudioChunk = null; // (groupId, senderPubHex, int16Samples) => void — raw incoming PCM, for live translation
 
       this.calls = new Map(); // groupId -> call state
     }
@@ -155,6 +156,7 @@ const HavenGroupCalls = (() => {
       const pcmBytes = base64ToBytes(payload.pcm_b64);
       const int16 = new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.length / 2);
       if (call.playChunk) call.playChunk(senderPubHex, int16);
+      if (this.onAudioChunk) this.onAudioChunk(groupId, senderPubHex, int16);
       if (rms(int16) > SPEAKING_RMS_THRESHOLD) {
         p.speaking = true;
         p.speakingUntil = Date.now() + SPEAKING_HOLD_MS;

@@ -20,6 +20,7 @@
     peers: new Map(), // fingerprint -> {username, identityPubHex}
     openFingerprint: null,
     openGroupId: null,
+    translationBuffers: new Map(), // "1:1:<fp>" | "group:<groupId>:<pubHex>" -> HavenTranslation.SpeakerBuffer
   };
 
   const el = (id) => document.getElementById(id);
@@ -209,6 +210,15 @@
     state.groupCallManager.onCallError = (groupId, message) => {
       if (groupId === state.openGroupId) appendLine("sys", "Group call error: " + message);
     };
+    state.groupCallManager.onAudioChunk = (groupId, senderPubHex, int16) => {
+      if (groupId !== state.openGroupId) return; // only translate for the call you're actually looking at
+      const participant = state.groupCallManager.participants(groupId).get(senderPubHex);
+      const name = participant ? participant.username : senderPubHex.slice(0, 8);
+      const buf = getTranslationBuffer(`group:${groupId}:${senderPubHex}`, (text, language) =>
+        appendCaption("group-call-captions", name, text, language)
+      );
+      if (buf) buf.push(int16);
+    };
     state.callManager = new HavenCalls.CallManager(state.net, identity, username);
     state.callManager.onIncomingCall = (fp, callId, hasVideo) => {
       if (fp !== state.openFingerprint) return; // known limitation: calls only surface for the currently-open chat
@@ -238,6 +248,12 @@
       img.src = url;
       img.dataset.prevUrl = url;
       img.hidden = false;
+    };
+    state.callManager.onAudioChunk = (fp, int16) => {
+      if (fp !== state.openFingerprint) return; // only translate for the call you're actually looking at
+      const name = state.peers.get(fp) ? state.peers.get(fp).username : fp;
+      const buf = getTranslationBuffer(`1:1:${fp}`, (text, language) => appendCaption("call-captions", name, text, language));
+      if (buf) buf.push(int16);
     };
     state.net.onMessage = (fp, kind, text, senderPubHex) => {
       if (kind === "group") {
@@ -646,6 +662,40 @@
     el("messages").scrollTop = el("messages").scrollHeight;
   }
 
+  function getTranslationBuffer(key, onCaption) {
+    if (!HavenTranslation.configured) return null;
+    let buf = state.translationBuffers.get(key);
+    if (!buf) {
+      buf = new HavenTranslation.SpeakerBuffer(onCaption, (e) => console.error("translation failed:", e));
+      state.translationBuffers.set(key, buf);
+    }
+    return buf;
+  }
+
+  function appendCaption(elementId, speakerName, text, language) {
+    const box = el(elementId);
+    box.classList.remove("hide");
+    const line = document.createElement("div");
+    line.className = "caption-line";
+    const langLabel = document.createElement("span");
+    langLabel.className = "caption-lang";
+    langLabel.textContent = `[${language}] `;
+    line.appendChild(langLabel);
+    const strong = document.createElement("b");
+    strong.textContent = speakerName + ": ";
+    line.appendChild(strong);
+    line.appendChild(document.createTextNode(text));
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+    while (box.children.length > 20) box.removeChild(box.firstChild); // keep it from growing forever
+  }
+
+  function clearCaptions(elementId) {
+    const box = el(elementId);
+    box.innerHTML = "";
+    box.classList.add("hide");
+  }
+
   function updateCallUI(callState) {
     const banner = el("incoming-call-banner");
     const panel = el("active-call-panel");
@@ -656,6 +706,7 @@
       panel.classList.remove("hide");
       el("active-call-status").textContent = "Calling…";
       el("call-mute-btn").hidden = true;
+      clearCaptions("call-captions");
     } else if (callState === "active") {
       banner.classList.add("hide");
       panel.classList.remove("hide");
@@ -674,6 +725,7 @@
       remoteImg.hidden = true;
       localImg.removeAttribute("src");
       remoteImg.removeAttribute("src");
+      clearCaptions("call-captions");
       if (callState === "rejected") appendLine("sys", "Call rejected.");
       else if (callState === "ended") appendLine("sys", "Call ended.");
     }
@@ -735,11 +787,13 @@
       banner.classList.add("hide");
       panel.classList.remove("hide");
       el("group-call-mute-btn").textContent = "Mute";
+      clearCaptions("group-call-captions");
       if (state.openGroupId) renderGroupCallParticipants(state.openGroupId);
     } else {
       banner.classList.add("hide");
       panel.classList.add("hide");
       el("group-call-participants").innerHTML = "";
+      clearCaptions("group-call-captions");
       if (callState === "ended") appendLine("sys", "Group call ended.");
     }
   }

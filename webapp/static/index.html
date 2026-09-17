@@ -49,6 +49,11 @@
   #emoji-picker.hide { display: none; }
   #incoming-call-banner.hide, #active-call-panel.hide { display: none; }
   #incoming-group-call-banner.hide, #active-group-call-panel.hide { display: none; }
+  .captions-box { margin-top: 8px; padding: 8px; background: #fffbe6; border: 1px solid #e6d68a; border-radius: 4px; font-size: 13px; max-height: 120px; overflow-y: auto; }
+  .captions-box.hide { display: none; }
+  .captions-box .caption-line { margin-bottom: 4px; }
+  .captions-box .caption-line b { font-weight: 600; }
+  .captions-box .caption-lang { color: #886; font-size: 11px; }
   .participant-tile { display: flex; flex-direction: column; align-items: center; width: 80px; padding: 6px; border-radius: 6px; border: 2px solid transparent; }
   .participant-tile.speaking { border-color: #3ea34e; background: #d9f0dd; }
   .participant-tile .avatar { width: 40px; height: 40px; font-size: 18px; line-height: 40px; }
@@ -203,6 +208,7 @@
           <img id="local-video-preview" hidden style="max-width:120px; border-radius:4px; margin-top:6px;">
           <img id="remote-video-display" hidden style="max-width:240px; border-radius:4px; margin-top:6px; margin-left:8px;">
         </div>
+        <div id="call-captions" class="captions-box hide"></div>
       </div>
       <div id="group-controls" hidden style="margin-top:4px; font-size:13px;">
         <span id="group-members-label"></span>
@@ -226,6 +232,7 @@
           <button id="group-call-mute-btn">Mute</button>
           <button id="group-call-leave-btn">Leave call</button>
           <div id="group-call-participants" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;"></div>
+          <div id="group-call-captions" class="captions-box hide"></div>
         </div>
       </div>
     </div>
@@ -262,17 +269,18 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=17"></script>
-<script src="js/storage.js?v=17"></script>
-<script src="js/network.js?v=17"></script>
-<script src="js/auth.js?v=17"></script>
-<script src="js/backup.js?v=17"></script>
-<script src="js/attachments.js?v=17"></script>
-<script src="js/groups.js?v=17"></script>
-<script src="js/calls.js?v=17"></script>
-<script src="js/groupcalls.js?v=17"></script>
-<script src="js/avatars.js?v=17"></script>
-<script src="js/giphy.js?v=17"></script>
-<script src="js/app.js?v=17"></script>
+<script src="js/crypto.js?v=18"></script>
+<script src="js/storage.js?v=18"></script>
+<script src="js/network.js?v=18"></script>
+<script src="js/auth.js?v=18"></script>
+<script src="js/backup.js?v=18"></script>
+<script src="js/attachments.js?v=18"></script>
+<script src="js/groups.js?v=18"></script>
+<script src="js/calls.js?v=18"></script>
+<script src="js/groupcalls.js?v=18"></script>
+<script src="js/avatars.js?v=18"></script>
+<script src="js/giphy.js?v=18"></script>
+<script src="js/translation.js?v=18"></script>
+<script src="js/app.js?v=18"></script>
 </body>
 </html>
