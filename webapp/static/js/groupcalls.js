@@ -19,7 +19,9 @@ const HavenGroupCalls = (() => {
   const H = Haven;
 
   const AUDIO_SAMPLE_RATE = 16000;
-  const AUDIO_BLOCK_SAMPLES = 1600; // 100ms @ 16kHz, matches calls.js/calls.py
+  // See calls.js's identical constant for why this is 1024, not 1600 —
+  // ScriptProcessorNode requires a power-of-2 buffer size.
+  const AUDIO_BLOCK_SAMPLES = 1024;
   const VIDEO_FPS = 7;
   const VIDEO_SIZE = { width: 320, height: 240 };
   const VIDEO_JPEG_QUALITY = 0.5;

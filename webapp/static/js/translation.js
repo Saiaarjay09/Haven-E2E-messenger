@@ -29,7 +29,9 @@ const HavenTranslation = (() => {
   const MAX_BUFFER_SECONDS = 4; // flush at this many seconds regardless, so captions stay roughly real-time
   const MIN_UTTERANCE_SECONDS = 0.6; // shorter than this is almost certainly noise/silence, not speech
   const SILENCE_RMS_THRESHOLD = 250;
-  const SILENCE_CHUNKS_TO_FLUSH = 6; // ~600ms of quiet (100ms chunks) after speech ends an utterance
+  // calls.js/groupcalls.js push one chunk per ScriptProcessorNode callback,
+  // 1024 samples (64ms) @ 16kHz — see AUDIO_BLOCK_SAMPLES there.
+  const SILENCE_CHUNKS_TO_FLUSH = 9; // ~600ms of quiet after speech ends an utterance
 
   function rms(int16) {
     let sum = 0;

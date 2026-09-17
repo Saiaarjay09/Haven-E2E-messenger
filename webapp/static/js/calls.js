@@ -22,7 +22,13 @@ const HavenCalls = (() => {
   const H = Haven;
 
   const AUDIO_SAMPLE_RATE = 16000;
-  const AUDIO_BLOCK_SAMPLES = 1600; // 100ms @ 16kHz, matches calls.py exactly
+  // ScriptProcessorNode requires a power-of-2 buffer size (256/512/1024/...),
+  // so this can't be 1600 (100ms @ 16kHz, what calls.py uses) like the name
+  // implies — 1024 (64ms) is the closest valid size below it. The exact
+  // chunk size isn't part of the wire protocol (send_audio_chunk/_on_audio
+  // in calls.py just pass whatever byte length arrives), so this only
+  // affects capture latency/chunkiness, not compatibility.
+  const AUDIO_BLOCK_SAMPLES = 1024;
   const VIDEO_FPS = 7;
   const VIDEO_SIZE = { width: 320, height: 240 };
   const VIDEO_JPEG_QUALITY = 0.5;
