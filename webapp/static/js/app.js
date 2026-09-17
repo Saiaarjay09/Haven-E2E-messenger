@@ -170,7 +170,7 @@
     state.store = await HavenStorage.Store.open(username, identity.privateBytes);
     state.net = new HavenNetwork.NetworkManager(identity, username, state.store);
     state.net.onMessage = (fp, kind, text) => {
-      if (fp === state.openFingerprint && kind === "text") appendLine("them", text);
+      if (fp === state.openFingerprint) appendLine("them", text, kind);
       refreshPeerList();
     };
     state.net.onConnect = (conn) => {
@@ -232,7 +232,7 @@
     const messages = el("messages");
     messages.innerHTML = "";
     for (const m of await state.store.history(fingerprint)) {
-      appendLine(m.direction === "out" ? "me" : "them", m.text);
+      appendLine(m.direction === "out" ? "me" : "them", m.text, m.kind);
     }
     if (!state.net.isConnected(fingerprint) && meta) {
       try {
@@ -244,31 +244,66 @@
     }
   }
 
-  function appendLine(who, text) {
+  function appendLine(who, text, kind = "text") {
     const div = document.createElement("div");
     div.className = "msg " + who;
-    div.textContent = (who === "me" ? "you: " : who === "them" ? "" : "* ") + text;
+    const prefix = who === "me" ? "you: " : who === "them" ? "" : "* ";
+    if (kind === "text") {
+      div.textContent = prefix + text;
+    } else {
+      try {
+        const payload = HavenAttachments.decodeAttachment(text);
+        if (prefix) div.appendChild(document.createTextNode(prefix));
+        let media;
+        if (kind === "image" || kind === "gif") {
+          media = document.createElement("img");
+          media.src = HavenAttachments.attachmentDataUrl(text);
+          media.alt = payload.filename;
+        } else if (kind === "audio") {
+          media = document.createElement("audio");
+          media.controls = true;
+          media.src = HavenAttachments.attachmentDataUrl(text);
+        } else if (kind === "video") {
+          media = document.createElement("video");
+          media.controls = true;
+          media.src = HavenAttachments.attachmentDataUrl(text);
+        } else {
+          const blob = new Blob([payload.data], { type: payload.mime });
+          media = document.createElement("a");
+          media.href = URL.createObjectURL(blob);
+          media.download = payload.filename;
+          media.textContent = "Download " + payload.filename;
+        }
+        div.appendChild(media);
+      } catch (e) {
+        div.textContent = prefix + "[unreadable attachment]";
+      }
+    }
     el("messages").appendChild(div);
     el("messages").scrollTop = el("messages").scrollHeight;
+  }
+
+  async function ensureConnected(fingerprint) {
+    if (state.net.isConnected(fingerprint)) return true;
+    const meta = state.peers.get(fingerprint);
+    try {
+      await state.net.connectRelay(H.hexToBytes(meta.identityPubHex), meta.username);
+    } catch (e) {
+      console.error("connectRelay failed:", e);
+      appendLine("sys", "Not connected: " + e.message);
+      return false;
+    }
+    // give the handshake a moment; a production UI would queue-and-retry
+    // (see the desktop app's pending_sends) rather than a fixed wait
+    await new Promise((r) => setTimeout(r, 500));
+    return true;
   }
 
   async function sendMessage() {
     const text = el("message-input").value.trim();
     if (!text || !state.openFingerprint) return;
     el("message-input").value = "";
-    if (!state.net.isConnected(state.openFingerprint)) {
-      const meta = state.peers.get(state.openFingerprint);
-      try {
-        await state.net.connectRelay(H.hexToBytes(meta.identityPubHex), meta.username);
-      } catch (e) {
-        console.error("connectRelay failed:", e);
-        appendLine("sys", "Not connected: " + e.message);
-        return;
-      }
-      // give the handshake a moment; a production UI would queue-and-retry
-      // (see the desktop app's pending_sends) rather than a fixed wait
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    if (!(await ensureConnected(state.openFingerprint))) return;
     try {
       await state.net.sendText(state.openFingerprint, text);
       appendLine("me", text);
@@ -276,6 +311,55 @@
       console.error("sendText failed:", e);
       appendLine("sys", "Send failed: " + e.message);
     }
+  }
+
+  async function sendAttachment(file) {
+    if (!state.openFingerprint) return;
+    let envelope, kind;
+    try {
+      envelope = await HavenAttachments.encodeAttachment(file);
+      kind = HavenAttachments.guessKind(file);
+    } catch (e) {
+      appendLine("sys", "Attachment failed: " + e.message);
+      return;
+    }
+    if (!(await ensureConnected(state.openFingerprint))) return;
+    try {
+      await state.net.sendText(state.openFingerprint, envelope, kind);
+      appendLine("me", envelope, kind);
+    } catch (e) {
+      console.error("sendAttachment failed:", e);
+      appendLine("sys", "Send failed: " + e.message);
+    }
+  }
+
+  const EMOJI_LIST = [
+    "😀", "😂", "😅", "😊", "🙂", "😉", "😍", "😘", "😜", "🤔",
+    "😎", "🥳", "😢", "😭", "😡", "😱", "😴", "🤗", "😇", "🙄",
+    "👍", "👎", "👏", "🙏", "💪", "🤝", "👋", "✌️", "🤞", "👀",
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💔", "💯",
+    "🎉", "🎂", "🔥", "✨", "⭐", "☕", "🍕", "🍔", "🍺", "🎁",
+    "✅", "❌", "❓", "❗", "💤", "📎", "📷", "🎵", "🚀", "🌈",
+  ];
+
+  function toggleEmojiPicker() {
+    const picker = el("emoji-picker");
+    if (!picker.classList.contains("hide")) {
+      picker.classList.add("hide");
+      return;
+    }
+    picker.innerHTML = "";
+    for (const emoji of EMOJI_LIST) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = emoji;
+      btn.onclick = () => {
+        el("message-input").value += emoji;
+        el("message-input").focus();
+      };
+      picker.appendChild(btn);
+    }
+    picker.classList.remove("hide");
   }
 
   function openAddContact() {
@@ -333,6 +417,13 @@
     el("send-btn").onclick = sendMessage;
     el("message-input").addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
+    });
+    el("emoji-btn").onclick = toggleEmojiPicker;
+    el("attach-btn").onclick = () => el("attach-file").click();
+    el("attach-file").addEventListener("change", () => {
+      const file = el("attach-file").files[0];
+      el("attach-file").value = "";
+      if (file) sendAttachment(file);
     });
     el("add-contact-btn").onclick = openAddContact;
     el("add-contact-confirm").onclick = confirmAddContact;

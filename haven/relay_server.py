@@ -230,7 +230,12 @@ class RelayServer:
 
         self._ws_loop = asyncio.get_running_loop()
         self._ws_stop_future = self._ws_loop.create_future()
-        async with ws_server.serve(self._handle_ws_client, "0.0.0.0", self.ws_port):
+        # The `websockets` library defaults max_size to 1 MiB, which an
+        # attachment message blows through easily: the browser client hex-
+        # encodes ciphertext (2x) on top of an attachment's own base64
+        # encoding (1.33x), so attachments.py's 8 MB limit needs headroom
+        # up to roughly 22 MB on the wire, not 1 MB.
+        async with ws_server.serve(self._handle_ws_client, "0.0.0.0", self.ws_port, max_size=32 * 1024 * 1024):
             await self._ws_stop_future
 
     async def _handle_ws_client(self, ws) -> None:

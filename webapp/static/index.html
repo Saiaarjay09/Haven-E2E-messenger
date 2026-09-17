@@ -31,9 +31,16 @@
   .msg.me { background: #d1e7dd; margin-left: auto; }
   .msg.them { background: #fff; border: 1px solid #ddd; }
   .msg.sys { color: #888; font-style: italic; background: none; max-width: 100%; }
-  #entry-row { display: flex; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
+  .msg img, .msg video { max-width: 260px; max-height: 260px; border-radius: 4px; display: block; }
+  .msg audio { display: block; max-width: 260px; }
+  #entry-row { display: flex; align-items: center; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
+  #emoji-btn, #attach-btn { flex: none; margin-right: 6px; padding: 6px 8px; font-size: 16px; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
   #message-input { flex: 1; padding: 8px; }
   #send-btn { margin-left: 8px; padding: 8px 16px; }
+  #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 140px; overflow-y: auto; }
+  #emoji-picker.hide { display: none; }
+  #emoji-picker button { font-size: 18px; padding: 4px; background: none; border: none; cursor: pointer; border-radius: 4px; }
+  #emoji-picker button:hover { background: #eee; }
 
   #recovery-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
   #recovery-overlay.hide { display: none; }
@@ -128,7 +135,11 @@
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
     </div>
     <div id="messages"></div>
+    <div id="emoji-picker" class="hide"></div>
     <div id="entry-row">
+      <button id="emoji-btn" type="button" title="Emoji">😀</button>
+      <button id="attach-btn" type="button" title="Attach a photo, GIF, audio, or video">📎</button>
+      <input id="attach-file" type="file" accept="image/*,audio/*,video/*" hidden>
       <input id="message-input" placeholder="Type a message…">
       <button id="send-btn">Send</button>
     </div>
@@ -151,11 +162,12 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=7"></script>
-<script src="js/storage.js?v=7"></script>
-<script src="js/network.js?v=7"></script>
-<script src="js/auth.js?v=7"></script>
-<script src="js/backup.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/crypto.js?v=8"></script>
+<script src="js/storage.js?v=8"></script>
+<script src="js/network.js?v=8"></script>
+<script src="js/auth.js?v=8"></script>
+<script src="js/backup.js?v=8"></script>
+<script src="js/attachments.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>
