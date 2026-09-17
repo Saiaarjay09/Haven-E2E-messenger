@@ -14,7 +14,7 @@
 const HavenGiphy = (() => {
   "use strict";
 
-  const GIPHY_API_KEY = "YOUR_GIPHY_API_KEY_HERE";
+  const GIPHY_API_KEY = "YRP6iu66lCdqL5iLqPNe4Aq3JqbOozzV";
 
   async function search(query, limit = 12) {
     const url = `https://api.giphy.com/v1/gifs/search?api_key=${encodeURIComponent(GIPHY_API_KEY)}&q=${encodeURIComponent(query)}&limit=${limit}&rating=pg-13`;
