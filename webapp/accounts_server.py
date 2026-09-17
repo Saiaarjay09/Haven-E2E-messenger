@@ -24,7 +24,8 @@ import threading
 import time
 
 import bcrypt
-from fastapi import FastAPI, HTTPException
+import requests
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -103,6 +104,16 @@ class SimpleRateLimiter:
 db = AccountsDB(os.environ.get("HAVEN_ACCOUNTS_DB", "haven_accounts.db"))
 login_limiter = SimpleRateLimiter(max_attempts=10, window_seconds=60.0)
 signup_limiter = SimpleRateLimiter(max_attempts=5, window_seconds=60.0)
+
+# Deliberately never accepted from a request — an OpenAI key is tied to
+# real billing, unlike this file's other secrets (auth_key/enc_key,
+# which the browser derives itself and this server never sees in
+# recoverable form). Read once from the environment at process start;
+# see WEB_DEPLOYMENT.md for how to set it. /api/translate below is the
+# only thing that uses it, and the key itself is never sent back to
+# any client, only OpenAI's response is.
+OPENAI_API_KEY = os.environ.get("HAVEN_OPENAI_API_KEY", "")
+translate_limiter = SimpleRateLimiter(max_attempts=30, window_seconds=60.0)
 
 app = FastAPI(title="Haven Accounts Service")
 
@@ -210,3 +221,37 @@ def forgot_password_reset(req: RecoveryResetRequest):
         req.username, req.new_password_salt, new_password_auth_hash, req.new_encrypted_identity_blob
     )
     return {"status": "ok"}
+
+
+@app.post("/api/translate")
+def translate_audio(request: Request, file: UploadFile = File(...)):
+    """Proxies one call-audio clip to OpenAI's Whisper translation
+    endpoint and returns only its result — see translation.js for why
+    this exists server-side rather than calling OpenAI directly from
+    the browser. A plain `def` (not `async def`) so FastAPI runs this
+    in its worker thread pool, since the outbound call below is a
+    blocking `requests` call, not an awaited one."""
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=503, detail="Translation is not configured on this server.")
+    client_ip = request.client.host if request.client else "unknown"
+    translate_limiter.check(client_ip)
+
+    audio_bytes = file.file.read()
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio clip too large.")
+
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/audio/translations",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+            data={"model": "whisper-1", "response_format": "verbose_json"},
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="Could not reach the translation service.") from exc
+    if not resp.ok:
+        raise HTTPException(status_code=502, detail="Translation service error.")
+
+    data = resp.json()
+    return {"text": data.get("text", ""), "language": data.get("language", "")}

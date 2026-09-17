@@ -3,24 +3,27 @@
  * this app is — this is the one deliberate exception (see the user's
  * own choice when this was built): a few seconds of the other person's
  * call audio at a time is sent to OpenAI's Whisper API for translation
- * to English. It goes straight from this browser to OpenAI over HTTPS,
- * with no Haven server involved, but it does leave the conversation,
- * which nothing else in this app does. Only used for audio a call
- * participant is already hearing anyway (this device's own decrypted
- * playback), never at rest and never for text messages.
- *
- * Get an API key at https://platform.openai.com/api-keys — unlike the
- * Giphy key, this one has a real (small) per-use cost: Whisper is
- * $0.006/minute of audio as of when this was written, billed to
- * whatever payment method is on the OpenAI account. Paste the key in
- * below; without one, translation is silently skipped (calls still
- * work fine, just without captions).
+ * to English, via this app's own accounts server acting as a proxy.
+ * It leaves the conversation (which nothing else in this app does),
+ * but the OpenAI API key never leaves the server — deliberately NOT
+ * embedded here, unlike the Giphy key. Giphy keys are meant to be
+ * public/client-side (they only identify the app for rate limiting);
+ * an OpenAI key is tied to real billing, so shipping it in this
+ * public repo's client-side JS would let anyone who finds it run up
+ * charges on the account that owns it. See webapp/accounts_server.py's
+ * /api/translate for the server side of this — it reads
+ * HAVEN_OPENAI_API_KEY from the environment, never from a request.
+ * Only used for audio a call participant is already hearing anyway
+ * (this device's own decrypted playback), never at rest and never for
+ * text messages.
  */
 
 const HavenTranslation = (() => {
   "use strict";
 
-  const OPENAI_API_KEY = "YOUR_OPENAI_API_KEY_HERE";
+  // Matches app.js's defaultAccountsUrl() — this deployment's fixed
+  // accounts server, which now also proxies translation requests.
+  const TRANSLATE_URL = "https://haven.taila6d3cb.ts.net:8443/api/translate";
 
   const SAMPLE_RATE = 16000;
   const MAX_BUFFER_SECONDS = 4; // flush at this many seconds regardless, so captions stay roughly real-time
@@ -64,13 +67,8 @@ const HavenTranslation = (() => {
     const wavBlob = pcm16ToWavBlob(int16Samples, SAMPLE_RATE);
     const formData = new FormData();
     formData.append("file", wavBlob, "audio.wav");
-    formData.append("model", "whisper-1");
-    formData.append("response_format", "verbose_json");
-    const resp = await fetch("https://api.openai.com/v1/audio/translations", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-      body: formData,
-    });
+    const resp = await fetch(TRANSLATE_URL, { method: "POST", body: formData });
+    if (resp.status === 503) throw new Error("Translation isn't configured on the server yet.");
     if (!resp.ok) throw new Error(`Translation request failed (${resp.status})`);
     const data = await resp.json();
     return { text: (data.text || "").trim(), language: (data.language || "").toLowerCase() };
@@ -128,9 +126,12 @@ const HavenTranslation = (() => {
   }
 
   return {
+    // Whether the server has a key configured isn't knowable from here
+    // without an extra round-trip, so this is always true — an
+    // unconfigured server just surfaces as an occasional console error
+    // via SpeakerBuffer's onError callback (calls/captions otherwise
+    // keep working fine).
     SpeakerBuffer,
-    get configured() {
-      return OPENAI_API_KEY !== "YOUR_OPENAI_API_KEY_HERE";
-    },
+    configured: true,
   };
 })();

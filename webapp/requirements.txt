@@ -3,6 +3,9 @@
 fastapi
 uvicorn[standard]
 bcrypt
+python-multipart  # needed for /api/translate's file upload (FastAPI's UploadFile/File)
 
-# For test_webapp_accounts_smoke.py's simulated-browser test client only.
+# Used at runtime by /api/translate (proxies to OpenAI's Whisper API —
+# see translation.js), and also by test_webapp_accounts_smoke.py's
+# simulated-browser test client.
 requests

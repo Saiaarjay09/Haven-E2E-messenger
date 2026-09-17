@@ -222,6 +222,26 @@ never touches it), point `HAVEN_ACCOUNTS_DB` in the accounts plist at
 somewhere like `~/Library/Application Support/Haven/haven_accounts.db`,
 and give the relay's `--db` flag a similar persistent path.
 
+### Optional: live call translation
+
+If you want the live-call-translation feature (captions when someone
+speaks a non-English language), set `HAVEN_OPENAI_API_KEY` in the
+accounts plist's `EnvironmentVariables` to an API key from
+[platform.openai.com](https://platform.openai.com/api-keys). Leave it
+out entirely to skip the feature — `webapp/static/js/translation.js`
+just gets an HTTP 503 from `/api/translate` and calls otherwise work
+fine with no captions.
+
+This key is billing-linked, unlike the Giphy key elsewhere in this repo,
+so it must **only** ever live in this environment variable on your own
+machine/server — never in any file under `webapp/static/`, never
+committed to git. `accounts_server.py`'s `/api/translate` endpoint reads
+it from the environment and proxies the request; the browser never sees
+it. After editing the plist, reload the service:
+```bash
+launchctl kickstart -k gui/$(id -u)/com.haven.accounts
+```
+
 ## Keeping it running
 
 - Both `.service` files auto-restart on crash and start on boot.

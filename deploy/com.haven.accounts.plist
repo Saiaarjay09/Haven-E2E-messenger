@@ -22,6 +22,13 @@
     <dict>
         <key>HAVEN_ACCOUNTS_DB</key>
         <string>/Users/YOURNAME/Library/Application Support/Haven/haven_accounts.db</string>
+        <!-- Optional: enables live call translation (/api/translate). Leave
+             out entirely to skip the feature — it degrades gracefully with
+             an HTTP 503 when unset. Get a key from platform.openai.com,
+             and never put it anywhere client-side (see translation.js) or
+             commit it to this file. -->
+        <key>HAVEN_OPENAI_API_KEY</key>
+        <string>sk-YOUR-OPENAI-KEY-HERE</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
