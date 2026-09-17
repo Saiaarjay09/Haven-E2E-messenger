@@ -48,6 +48,12 @@
   #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 140px; overflow-y: auto; }
   #emoji-picker.hide { display: none; }
   #incoming-call-banner.hide, #active-call-panel.hide { display: none; }
+  #incoming-group-call-banner.hide, #active-group-call-panel.hide { display: none; }
+  .participant-tile { display: flex; flex-direction: column; align-items: center; width: 80px; padding: 6px; border-radius: 6px; border: 2px solid transparent; }
+  .participant-tile.speaking { border-color: #3ea34e; background: #d9f0dd; }
+  .participant-tile .avatar { width: 40px; height: 40px; font-size: 18px; line-height: 40px; }
+  .participant-tile img.participant-video { width: 72px; height: 54px; object-fit: cover; border-radius: 4px; margin-top: 4px; }
+  .participant-tile .participant-name { font-size: 11px; margin-top: 4px; text-align: center; word-break: break-word; }
   #emoji-picker button { font-size: 18px; padding: 4px; background: none; border: none; cursor: pointer; border-radius: 4px; }
   #emoji-picker button:hover { background: #eee; }
 
@@ -206,6 +212,21 @@
           <button id="group-add-member-confirm">Add</button>
           <button id="group-add-member-cancel">Cancel</button>
         </div>
+        <div style="margin-top:6px;">
+          <button id="group-call-voice-btn">📞 Group call</button>
+          <button id="group-call-video-btn">📹 Group video call</button>
+        </div>
+        <div id="incoming-group-call-banner" class="hide" style="margin-top:6px; padding:8px; background:#fff8dc; border:1px solid #e0c860; border-radius:4px;">
+          <span id="incoming-group-call-text"></span>
+          <button id="incoming-group-call-join">Join</button>
+          <button id="incoming-group-call-dismiss">Dismiss</button>
+        </div>
+        <div id="active-group-call-panel" class="hide" style="margin-top:6px; padding:8px; background:#e8f4ea; border:1px solid #8cc99a; border-radius:4px;">
+          <span>Group call in progress</span>
+          <button id="group-call-mute-btn">Mute</button>
+          <button id="group-call-leave-btn">Leave call</button>
+          <div id="group-call-participants" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;"></div>
+        </div>
       </div>
     </div>
     <div id="messages"></div>
@@ -241,16 +262,17 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=15"></script>
-<script src="js/storage.js?v=15"></script>
-<script src="js/network.js?v=15"></script>
-<script src="js/auth.js?v=15"></script>
-<script src="js/backup.js?v=15"></script>
-<script src="js/attachments.js?v=15"></script>
-<script src="js/groups.js?v=15"></script>
-<script src="js/calls.js?v=15"></script>
-<script src="js/avatars.js?v=15"></script>
-<script src="js/giphy.js?v=15"></script>
-<script src="js/app.js?v=15"></script>
+<script src="js/crypto.js?v=17"></script>
+<script src="js/storage.js?v=17"></script>
+<script src="js/network.js?v=17"></script>
+<script src="js/auth.js?v=17"></script>
+<script src="js/backup.js?v=17"></script>
+<script src="js/attachments.js?v=17"></script>
+<script src="js/groups.js?v=17"></script>
+<script src="js/calls.js?v=17"></script>
+<script src="js/groupcalls.js?v=17"></script>
+<script src="js/avatars.js?v=17"></script>
+<script src="js/giphy.js?v=17"></script>
+<script src="js/app.js?v=17"></script>
 </body>
 </html>

@@ -179,7 +179,11 @@
     state.store = await HavenStorage.Store.open(username, identity.privateBytes);
     state.net = new HavenNetwork.NetworkManager(identity, username, state.store);
     state.groupManager = await HavenGroups.GroupManager.create(state.net, state.store, identity, username);
-    state.groupManager.onGroupMessage = (groupId, senderUsername, text, kind) => {
+    state.groupManager.onGroupMessage = (groupId, senderUsername, text, kind, senderPubHex) => {
+      if (kind === "group_call") {
+        state.groupCallManager.handleIncoming(groupId, senderPubHex, senderUsername, text);
+        return;
+      }
       if (state.openGroupId === groupId) {
         appendLine(senderUsername === state.username ? "me" : "them", text, kind, senderUsername);
       }
@@ -188,6 +192,22 @@
     state.groupManager.onGroupUpdate = (groupId) => {
       refreshPeerList();
       if (state.openGroupId === groupId) renderGroupHeader(groupId);
+    };
+    state.groupCallManager = new HavenGroupCalls.GroupCallManager(state.groupManager);
+    state.groupCallManager.onIncomingGroupCall = (groupId, fromUsername, hasVideo) => {
+      if (groupId !== state.openGroupId) return; // known limitation: same as 1:1 calls, only surfaces for the open chat
+      el("incoming-group-call-text").textContent = `📞 ${fromUsername} started a${hasVideo ? " video" : ""} group call`;
+      el("incoming-group-call-banner").classList.remove("hide");
+    };
+    state.groupCallManager.onCallState = (groupId, callState) => {
+      if (groupId !== state.openGroupId) return;
+      updateGroupCallUI(callState);
+    };
+    state.groupCallManager.onParticipantsChanged = (groupId) => {
+      if (groupId === state.openGroupId) renderGroupCallParticipants(groupId);
+    };
+    state.groupCallManager.onCallError = (groupId, message) => {
+      if (groupId === state.openGroupId) appendLine("sys", "Group call error: " + message);
     };
     state.callManager = new HavenCalls.CallManager(state.net, identity, username);
     state.callManager.onIncomingCall = (fp, callId, hasVideo) => {
@@ -516,6 +536,13 @@
     el("call-controls").hidden = true;
     el("incoming-call-banner").classList.add("hide");
     el("active-call-panel").classList.add("hide");
+    el("incoming-group-call-banner").classList.add("hide");
+    if (state.groupCallManager.isActive(groupId)) {
+      el("active-group-call-panel").classList.remove("hide");
+      renderGroupCallParticipants(groupId);
+    } else {
+      el("active-group-call-panel").classList.add("hide");
+    }
     el("chat-title-avatar").innerHTML = "";
     refreshPeerList();
     renderGroupHeader(groupId);
@@ -698,6 +725,95 @@
     const btn = el("call-mute-btn");
     const nowMuted = btn.textContent !== "Unmute";
     state.callManager.setMuted(state.openFingerprint, nowMuted);
+    btn.textContent = nowMuted ? "Unmute" : "Mute";
+  }
+
+  function updateGroupCallUI(callState) {
+    const banner = el("incoming-group-call-banner");
+    const panel = el("active-group-call-panel");
+    if (callState === "active") {
+      banner.classList.add("hide");
+      panel.classList.remove("hide");
+      el("group-call-mute-btn").textContent = "Mute";
+      if (state.openGroupId) renderGroupCallParticipants(state.openGroupId);
+    } else {
+      banner.classList.add("hide");
+      panel.classList.add("hide");
+      el("group-call-participants").innerHTML = "";
+      if (callState === "ended") appendLine("sys", "Group call ended.");
+    }
+  }
+
+  function renderGroupCallParticipants(groupId) {
+    const container = el("group-call-participants");
+    container.innerHTML = "";
+    // Myself first, so you can always see your own mic is live.
+    const meTile = document.createElement("div");
+    meTile.className = "participant-tile";
+    meTile.appendChild(avatarElement(state.username, loadMyAvatar()));
+    const meName = document.createElement("div");
+    meName.className = "participant-name";
+    meName.textContent = state.username + " (you)";
+    meTile.appendChild(meName);
+    container.appendChild(meTile);
+
+    for (const p of state.groupCallManager.participants(groupId).values()) {
+      const tile = document.createElement("div");
+      tile.className = "participant-tile" + (p.speaking ? " speaking" : "");
+      tile.appendChild(avatarElement(p.username, null));
+      if (p.videoUrl) {
+        const img = document.createElement("img");
+        img.className = "participant-video";
+        img.src = p.videoUrl;
+        tile.appendChild(img);
+      }
+      const name = document.createElement("div");
+      name.className = "participant-name";
+      name.textContent = p.username;
+      tile.appendChild(name);
+      container.appendChild(tile);
+    }
+  }
+
+  async function doStartGroupCall(video) {
+    if (!state.openGroupId) return;
+    try {
+      await state.groupCallManager.startOrJoin(state.openGroupId, video);
+    } catch (e) {
+      console.error("startGroupCall failed:", e);
+      appendLine("sys", "Could not start group call: " + e.message);
+    }
+  }
+
+  async function doJoinGroupCall() {
+    if (!state.openGroupId) return;
+    el("incoming-group-call-banner").classList.add("hide");
+    try {
+      await state.groupCallManager.startOrJoin(state.openGroupId, false);
+    } catch (e) {
+      console.error("joinGroupCall failed:", e);
+      appendLine("sys", "Could not join group call: " + e.message);
+    }
+  }
+
+  function doDismissGroupCall() {
+    el("incoming-group-call-banner").classList.add("hide");
+  }
+
+  async function doLeaveGroupCall() {
+    if (!state.openGroupId) return;
+    try {
+      await state.groupCallManager.leave(state.openGroupId);
+    } catch (e) {
+      console.error("leaveGroupCall failed:", e);
+    }
+  }
+
+  function doToggleGroupCallMute() {
+    if (!state.openGroupId) return;
+    const btn = el("group-call-mute-btn");
+    const nowMuted = btn.textContent !== "Unmute";
+    state.groupCallManager.setMuted(state.openGroupId, nowMuted);
     btn.textContent = nowMuted ? "Unmute" : "Mute";
   }
 
@@ -946,6 +1062,12 @@
     el("incoming-call-reject").onclick = doRejectCall;
     el("call-hangup-btn").onclick = doHangup;
     el("call-mute-btn").onclick = doToggleMute;
+    el("group-call-voice-btn").onclick = () => doStartGroupCall(false);
+    el("group-call-video-btn").onclick = () => doStartGroupCall(true);
+    el("incoming-group-call-join").onclick = doJoinGroupCall;
+    el("incoming-group-call-dismiss").onclick = doDismissGroupCall;
+    el("group-call-leave-btn").onclick = doLeaveGroupCall;
+    el("group-call-mute-btn").onclick = doToggleGroupCallMute;
     el("logout-link").onclick = (e) => {
       e.preventDefault();
       doLogout();

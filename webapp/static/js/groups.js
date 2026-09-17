@@ -31,7 +31,7 @@ const HavenGroups = (() => {
       this.username = username;
       this.myPubHex = H.bytesToHex(identity.publicBytes);
 
-      this.onGroupMessage = null; // (groupId, senderUsername, text, kind) => void
+      this.onGroupMessage = null; // (groupId, senderUsername, text, kind, senderIdentityPubHex) => void
       this.onGroupUpdate = null; // (groupId) => void
 
       this.groups = new Map(); // groupId -> { name, members: Map(pubHex->username), myChain, peerChains: Map(pubHex->chain), removed }
@@ -248,10 +248,13 @@ const HavenGroups = (() => {
       }
       const kind = payload.kind || "text";
       await this._persist(groupId);
-      await this.store.saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind);
+      // "group_call" is call signaling plus a stream of audio/video
+      // chunks (up to ~10/sec) — not something to persist as a group
+      // chat message, same reasoning as 1:1 calls (see network.js).
+      if (kind !== "group_call") await this.store.saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind);
       if (this.onGroupMessage) {
         const username = g.members.get(senderIdentityPubHex) || senderIdentityPubHex.slice(0, 8);
-        this.onGroupMessage(groupId, username, plaintext, kind);
+        this.onGroupMessage(groupId, username, plaintext, kind, senderIdentityPubHex);
       }
     }
 
