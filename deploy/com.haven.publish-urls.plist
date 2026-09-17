@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs deploy/publish-urls.sh every 2 minutes, which commits+pushes the
+  current tunnel URLs to CURRENT_LINKS.md whenever they change (and only
+  when they change) — so anyone can check one stable page instead of you
+  re-sending a fresh link every time a tunnel restarts under a new URL.
+  Requires this Mac to already have push access to the repo (the same
+  access you're using to develop Haven itself).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haven.publish-urls</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <!-- Adjust this path to wherever you cloned Haven -->
+        <string>/Users/YOURNAME/Developer/haven/deploy/publish-urls.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>120</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/publish-urls.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/publish-urls.log</string>
+</dict>
+</plist>

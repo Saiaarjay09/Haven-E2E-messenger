@@ -19,6 +19,11 @@ reset — see `webapp/README.md` for what that involved (and the real
 security tradeoff it accepts that this desktop app doesn't have). Groups,
 calls, rich content, and on-device AI in the browser aren't built yet.
 
+**Want to actually try the hosted web app right now?** See
+[CURRENT_LINKS.md](CURRENT_LINKS.md) for the current live URL (it
+changes periodically — that file is always kept up to date automatically,
+see `WEB_DEPLOYMENT.md`).
+
 ## Run it (LAN only, no setup)
 
 ```bash

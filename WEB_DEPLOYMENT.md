@@ -174,6 +174,15 @@ fixes that part.
    each tunnel's current URL actually responds and force-restarts any that
    don't — see that script's own comments for exactly why this is needed.
    Check `~/Library/Logs/Haven/tunnel-watchdog.log` to see when it's fired.
+7. Set up automatic link publishing, so you're not re-sending a fresh
+   URL to everyone by hand every time a tunnel restarts under a new one:
+   copy `com.haven.publish-urls.plist` into `~/Library/LaunchAgents/`
+   (fill in your username/paths — needs this Mac to already have git
+   push access to the repo) and bootstrap it the same way. Every 2
+   minutes, `deploy/publish-urls.sh` checks the current URLs and, only
+   when one has actually changed, commits and pushes an update to
+   [CURRENT_LINKS.md](CURRENT_LINKS.md) — so that one file's GitHub page
+   is always the current, correct link to send anyone.
 
 Because the accounts database now lives outside the repo (so `git pull`
 never touches it), point `HAVEN_ACCOUNTS_DB` in the accounts plist at
