@@ -149,8 +149,20 @@ No domain purchase, no NS record changes, nothing to renew.
    ```bash
    tailscale funnel --bg --https=443   8899  # static files
    tailscale funnel --bg --https=8443  8000  # accounts API
-   tailscale funnel --bg --https=10000 8444  # relay (WebSocket)
+   tailscale funnel --bg --tls-terminated-tcp=10000 8444  # relay (WebSocket)
    ```
+   The relay specifically needs `--tls-terminated-tcp`, not `--https`,
+   even though it's still served as `wss://` to browsers. `--https`
+   makes Funnel negotiate and speak HTTP/2 with the browser, and modern
+   Chrome then tries to open the WebSocket as an HTTP/2 extended-CONNECT
+   stream (RFC 8441) — which Funnel doesn't bridge through to a plain
+   HTTP/1.1 backend like `relay_server.py`, so the connection fails
+   instantly (`1006`) for real browsers even though `curl --http1.1`
+   against the same URL looks fine. `--tls-terminated-tcp` makes Funnel
+   terminate TLS (so you still get a valid public cert, no self-signed
+   warnings) but hand off raw decrypted bytes instead of parsing HTTP —
+   that sidesteps the HTTP/2 negotiation entirely and lets the classic
+   WebSocket upgrade reach the backend intact.
 5. Your permanent links (see `tailscale funnel status` any time to
    re-check them):
    - Web app: `https://<device>.<tailnet>.ts.net`
