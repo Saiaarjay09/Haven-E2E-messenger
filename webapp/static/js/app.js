@@ -24,11 +24,17 @@
 
   const el = (id) => document.getElementById(id);
 
+  // Hardcoded to this specific deployment (Tailscale Funnel, see
+  // WEB_DEPLOYMENT.md Option C1) rather than derived from location.* —
+  // this app is only ever used by one small group on one fixed host, so
+  // asking every signup/login to manually paste two URLs was pure
+  // friction with no actual flexibility being used. If this ever moves
+  // to a different host, update these two lines (and CURRENT_LINKS.md).
   function defaultAccountsUrl() {
-    return `${location.protocol}//${location.hostname}:8000`;
+    return "https://haven.taila6d3cb.ts.net:8443";
   }
   function defaultRelayWsUrl() {
-    return `ws://${location.hostname}:8444`;
+    return "wss://haven.taila6d3cb.ts.net:10000";
   }
 
   function showScreen(name) {
@@ -54,7 +60,7 @@
   async function doSignup() {
     const username = el("username").value.trim();
     const password = el("password").value;
-    const accountsUrl = el("accounts-url").value.trim() || defaultAccountsUrl();
+    const accountsUrl = defaultAccountsUrl();
     if (!username || !password) return setStatus("Enter a username and password.");
     state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
     try {
@@ -70,7 +76,7 @@
   async function doLogin() {
     const username = el("username").value.trim();
     const password = el("password").value;
-    const accountsUrl = el("accounts-url").value.trim() || defaultAccountsUrl();
+    const accountsUrl = defaultAccountsUrl();
     if (!username || !password) return setStatus("Enter a username and password.");
     state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
     try {
@@ -93,7 +99,7 @@
     const username = el("username").value.trim();
     const recoveryPhrase = el("recovery-phrase-input").value.trim();
     const newPassword = el("new-password-input").value;
-    const accountsUrl = el("accounts-url").value.trim() || defaultAccountsUrl();
+    const accountsUrl = defaultAccountsUrl();
     if (!username || !recoveryPhrase || !newPassword) {
       return setStatus("Enter your username above, plus your recovery phrase and a new password.");
     }
@@ -222,16 +228,28 @@
         state.callManager.handleIncoming(fp, text);
         return;
       }
+      if (kind === "avatar") {
+        handleIncomingAvatar(fp, text);
+        return;
+      }
       if (fp === state.openFingerprint) appendLine("them", text, kind);
       refreshPeerList();
     };
     state.net.onConnect = (conn) => {
-      state.peers.set(conn.fingerprint, { username: conn.username, identityPubHex: H.bytesToHex(conn.identityPub) });
+      const fp = conn.fingerprint;
+      const existing = state.peers.get(fp);
+      state.peers.set(fp, {
+        username: conn.username,
+        identityPubHex: H.bytesToHex(conn.identityPub),
+        avatarDataUrl: existing ? existing.avatarDataUrl : undefined,
+      });
       refreshPeerList();
+      if (fp === state.openFingerprint) renderChatHeaderAvatar(fp);
+      sendMyAvatarTo(fp).catch((e) => console.error("send avatar failed:", e));
     };
     state.net.onStatus = () => refreshPeerList();
 
-    const relayWsUrl = el("relay-url").value.trim() || defaultRelayWsUrl();
+    const relayWsUrl = defaultRelayWsUrl();
     state.relay = new HavenNetwork.RelayClient(identity, username, relayWsUrl);
     state.net.attachRelay(state.relay);
     state.relay.onConnectionChange = (connected) => {
@@ -240,12 +258,13 @@
     state.relay.start();
 
     for (const c of await state.store.listContacts()) {
-      state.peers.set(c.fingerprint, { username: c.username, identityPubHex: c.identityPubHex });
+      state.peers.set(c.fingerprint, { username: c.username, identityPubHex: c.identityPubHex, avatarDataUrl: c.avatarDataUrl });
     }
     refreshPeerList();
     showScreen("app");
     el("my-username").textContent = state.username;
     saveSession(username, identity.privateBytes);
+    renderMyAvatar();
   }
 
   // "Stay signed in" support: the decrypted identity key is cached in
@@ -290,13 +309,34 @@
     location.reload();
   }
 
+  // Returns an <img class="avatar"> if we have one, otherwise a colored
+  // circle with the first letter of the name — the common "no photo yet"
+  // fallback every messaging app uses.
+  function avatarElement(name, dataUrl) {
+    if (dataUrl) {
+      const img = document.createElement("img");
+      img.className = "avatar";
+      img.src = dataUrl;
+      img.alt = name;
+      return img;
+    }
+    const span = document.createElement("span");
+    span.className = "avatar";
+    span.textContent = (name || "?").charAt(0).toUpperCase();
+    let hash = 0;
+    for (const ch of name || "?") hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+    span.style.background = `hsl(${hash % 360}, 45%, 55%)`;
+    return span;
+  }
+
   function refreshPeerList() {
     const list = el("peer-list");
     list.innerHTML = "";
     for (const [fp, meta] of state.peers.entries()) {
       const li = document.createElement("li");
       const online = state.net.isConnected(fp);
-      li.textContent = `${meta.username} (${online ? "online" : "offline"})`;
+      li.appendChild(avatarElement(meta.username, meta.avatarDataUrl));
+      li.appendChild(document.createTextNode(`${meta.username} (${online ? "online" : "offline"})`));
       li.dataset.fp = fp;
       li.className = fp === state.openFingerprint ? "selected" : "";
       li.onclick = () => openChat(fp);
@@ -305,7 +345,8 @@
     if (state.groupManager) {
       for (const g of state.groupManager.listGroups()) {
         const li = document.createElement("li");
-        li.textContent = `👥 ${g.name}${g.removed ? " (removed)" : ""}`;
+        li.appendChild(avatarElement(g.name, null));
+        li.appendChild(document.createTextNode(`${g.name}${g.removed ? " (removed)" : ""}`));
         li.className = g.groupId === state.openGroupId ? "selected" : "";
         li.onclick = () => openGroup(g.groupId);
         list.appendChild(li);
@@ -313,10 +354,75 @@
     }
   }
 
+  function renderChatHeaderAvatar(fingerprint) {
+    const meta = state.peers.get(fingerprint);
+    const holder = el("chat-title-avatar");
+    holder.innerHTML = "";
+    if (meta) holder.appendChild(avatarElement(meta.username, meta.avatarDataUrl));
+  }
+
+  function renderMyAvatar() {
+    const dataUrl = loadMyAvatar();
+    const img = el("my-avatar");
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.hidden = false;
+    } else {
+      img.hidden = true;
+    }
+  }
+
+  function myAvatarKey() {
+    return `haven-avatar:${state.username}`;
+  }
+
+  function loadMyAvatar() {
+    try {
+      return localStorage.getItem(myAvatarKey());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function doSetAvatar(file) {
+    try {
+      const dataUrl = await HavenAvatars.fileToAvatarDataUrl(file);
+      localStorage.setItem(myAvatarKey(), dataUrl);
+      renderMyAvatar();
+      for (const fp of state.peers.keys()) {
+        sendMyAvatarTo(fp).catch((e) => console.error("send avatar failed:", e));
+      }
+    } catch (e) {
+      console.error("set avatar failed:", e);
+      appendLine("sys", "Could not set avatar: " + e.message);
+    }
+  }
+
+  async function sendMyAvatarTo(fingerprint) {
+    const dataUrl = loadMyAvatar();
+    if (!dataUrl) return;
+    if (!(await ensureConnected(fingerprint))) return;
+    await state.net.sendText(fingerprint, HavenAvatars.dataUrlToPayload(dataUrl), "avatar");
+  }
+
+  async function handleIncomingAvatar(fingerprint, text) {
+    let dataUrl;
+    try {
+      dataUrl = HavenAvatars.payloadToDataUrl(text);
+    } catch (e) {
+      return;
+    }
+    await state.store.setAvatar(fingerprint, dataUrl);
+    const meta = state.peers.get(fingerprint);
+    if (meta) meta.avatarDataUrl = dataUrl;
+    refreshPeerList();
+    if (fingerprint === state.openFingerprint) renderChatHeaderAvatar(fingerprint);
+  }
+
   function renderGroupHeader(groupId) {
     const g = state.groupManager.listGroups().find((x) => x.groupId === groupId);
     if (!g) return;
-    el("chat-title").textContent = g.name + (g.removed ? " (you were removed)" : "");
+    el("chat-title-text").textContent = g.name + (g.removed ? " (you were removed)" : "");
     el("group-controls").hidden = false;
     const label = el("group-members-label");
     label.textContent = "";
@@ -403,12 +509,14 @@
   async function openGroup(groupId) {
     state.openGroupId = groupId;
     state.openFingerprint = null;
+    document.body.classList.add("chat-open");
     el("safety-number").textContent = "";
     el("verify-btn").hidden = true;
     el("group-add-member-row").hidden = true;
     el("call-controls").hidden = true;
     el("incoming-call-banner").classList.add("hide");
     el("active-call-panel").classList.add("hide");
+    el("chat-title-avatar").innerHTML = "";
     refreshPeerList();
     renderGroupHeader(groupId);
 
@@ -425,13 +533,15 @@
   async function openChat(fingerprint) {
     state.openFingerprint = fingerprint;
     state.openGroupId = null;
+    document.body.classList.add("chat-open");
     el("group-controls").hidden = true;
     el("group-add-member-row").hidden = true;
     el("call-controls").hidden = false;
     el("incoming-call-banner").classList.add("hide");
     el("active-call-panel").classList.add("hide");
     const meta = state.peers.get(fingerprint);
-    el("chat-title").textContent = meta ? meta.username : fingerprint;
+    el("chat-title-text").textContent = meta ? meta.username : fingerprint;
+    renderChatHeaderAvatar(fingerprint);
     refreshPeerList();
 
     // The fingerprint IS the safety number (same value, same function, as
@@ -461,6 +571,13 @@
         appendLine("sys", "Could not reach relay: " + e.message);
       }
     }
+  }
+
+  // Mobile layout only (see the @media block in index.html) — desktop
+  // shows the contact list and open chat side by side and this button
+  // is hidden there, so it's harmless to always wire up.
+  function doBackToList() {
+    document.body.classList.remove("chat-open");
   }
 
   function appendLine(who, text, kind = "text", senderLabel = null) {
@@ -673,6 +790,68 @@
     picker.classList.remove("hide");
   }
 
+  function toggleGifPicker() {
+    const picker = el("gif-picker");
+    if (picker.classList.contains("show")) {
+      picker.classList.remove("show");
+      return;
+    }
+    if (!HavenGiphy.configured) {
+      appendLine(
+        "sys",
+        "GIF search needs a free Giphy API key — get one at developers.giphy.com and paste it into webapp/static/js/giphy.js."
+      );
+      return;
+    }
+    el("gif-search").value = "";
+    el("gif-results").innerHTML = "";
+    picker.classList.add("show");
+    el("gif-search").focus();
+  }
+
+  let gifSearchDebounce = null;
+  function onGifSearchInput() {
+    clearTimeout(gifSearchDebounce);
+    const query = el("gif-search").value.trim();
+    if (!query) {
+      el("gif-results").innerHTML = "";
+      return;
+    }
+    gifSearchDebounce = setTimeout(() => doGifSearch(query), 350);
+  }
+
+  async function doGifSearch(query) {
+    const results = el("gif-results");
+    try {
+      const gifs = await HavenGiphy.search(query);
+      results.innerHTML = "";
+      for (const gif of gifs) {
+        const img = document.createElement("img");
+        img.src = gif.previewUrl;
+        img.alt = gif.title;
+        img.onclick = () => pickGif(gif);
+        results.appendChild(img);
+      }
+    } catch (e) {
+      console.error("Giphy search failed:", e);
+      results.innerHTML = "";
+      appendLine("sys", "GIF search failed: " + e.message);
+    }
+  }
+
+  async function pickGif(gif) {
+    el("gif-picker").classList.remove("show");
+    if (!state.openFingerprint && !state.openGroupId) return;
+    try {
+      const bytes = await HavenGiphy.fetchGifBytes(gif.fullUrl);
+      const file = new File([bytes], `${gif.id}.gif`, { type: "image/gif" });
+      await sendAttachment(file);
+    } catch (e) {
+      console.error("send GIF failed:", e);
+      appendLine("sys", "Could not send GIF: " + e.message);
+    }
+  }
+
   function openAddContact() {
     el("add-contact-row").hidden = false;
     el("add-contact-input").value = "";
@@ -720,8 +899,6 @@
       }
     }
 
-    el("accounts-url").placeholder = defaultAccountsUrl();
-    el("relay-url").placeholder = defaultRelayWsUrl();
     el("signup-btn").onclick = doSignup;
     el("login-btn").onclick = doLogin;
     el("forgot-password-link").onclick = (e) => {
@@ -773,5 +950,14 @@
       e.preventDefault();
       doLogout();
     };
+    el("back-to-list-btn").onclick = doBackToList;
+    el("set-avatar-btn").onclick = () => el("avatar-file").click();
+    el("avatar-file").addEventListener("change", () => {
+      const file = el("avatar-file").files[0];
+      el("avatar-file").value = "";
+      if (file) doSetAvatar(file);
+    });
+    el("gif-btn").onclick = toggleGifPicker;
+    el("gif-search").addEventListener("input", onGifSearchInput);
   });
 })();

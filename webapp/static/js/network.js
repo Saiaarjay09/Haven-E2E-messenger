@@ -13,6 +13,10 @@ const HavenNetwork = (() => {
   "use strict";
   const H = Haven;
 
+  // Message kinds that are routing/control traffic riding the 1:1
+  // channel, not something to show in a contact's chat transcript.
+  const NON_MESSAGE_KINDS = new Set(["group", "call", "avatar"]);
+
   class RelayClient {
     constructor(identity, username, wsUrl) {
       this.identity = identity;
@@ -190,12 +194,13 @@ const HavenNetwork = (() => {
       await this.store.saveSession(fp, conn.session);
       const kind = frame.kind || "text";
       const text = H.fromUtf8(plaintext);
-      // "group" frames are sender-keys control/chat traffic (see
-      // groups.js) and "call" frames are call signaling plus a stream of
-      // audio/video chunks (see calls.js, up to ~10/sec) — neither
-      // belongs in this contact's 1:1 chat history, so route them away
-      // entirely instead of persisting each one as a "message".
-      if (kind !== "group" && kind !== "call") await this.store.saveMessage(fp, "in", text, kind);
+      // "group" frames are sender-keys control/chat traffic (groups.js),
+      // "call" frames are call signaling plus a stream of audio/video
+      // chunks (calls.js, up to ~10/sec), and "avatar" frames are
+      // profile-picture pushes (avatars.js) — none of these belong in
+      // this contact's 1:1 chat history, so route them away entirely
+      // instead of persisting each one as a "message".
+      if (!NON_MESSAGE_KINDS.has(kind)) await this.store.saveMessage(fp, "in", text, kind);
       if (this.onMessage) this.onMessage(fp, kind, text, H.bytesToHex(senderIdentityPub));
     }
 
@@ -211,7 +216,7 @@ const HavenNetwork = (() => {
         ciphertext: H.bytesToHex(envelope.ciphertext),
         kind,
       });
-      if (kind !== "group" && kind !== "call") await this.store.saveMessage(fingerprint, "out", text, kind);
+      if (!NON_MESSAGE_KINDS.has(kind)) await this.store.saveMessage(fingerprint, "out", text, kind);
     }
   }
 

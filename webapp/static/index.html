@@ -2,8 +2,16 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Haven</title>
 <style>
+  /* An element's own `display` rule (e.g. #app-screen's `display:flex`)
+     otherwise silently overrides the plain HTML `hidden` attribute —
+     both are author-origin rules of equal specificity, and CSS's tie
+     break there is declaration order, not "hidden wins". !important
+     here restores the behavior `el(...).hidden = true` actually implies
+     throughout this file. */
+  [hidden] { display: none !important; }
   body { font-family: -apple-system, sans-serif; margin: 0; background: #f5f5f5; }
   #login-screen { max-width: 420px; margin: 60px auto; background: white; padding: 24px; border-radius: 8px; }
   #login-screen h1 { margin-top: 0; }
@@ -47,6 +55,36 @@
   #recovery-overlay.hide { display: none; }
   #recovery-box { background: #fff; padding: 20px; border-radius: 8px; max-width: 420px; }
   #recovery-phrase { font-family: monospace; font-size: 15px; background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 10px 0; user-select: all; }
+
+  .avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-block; vertical-align: middle; object-fit: cover; background: #ccc; color: #fff; text-align: center; line-height: 28px; font-size: 13px; flex: none; }
+  #peer-list li { display: flex; align-items: center; gap: 8px; }
+  #chat-title { display: flex; align-items: center; gap: 8px; }
+
+  #back-to-list-btn { display: none; margin-right: 8px; padding: 6px 10px; }
+  #gif-btn { flex: none; margin-right: 6px; padding: 6px 8px; font-size: 13px; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
+  #gif-picker { display: none; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 260px; overflow-y: auto; }
+  #gif-picker.show { display: flex; }
+  #gif-search { width: 100%; box-sizing: border-box; padding: 6px; }
+  #gif-results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  #gif-results img { width: 100%; border-radius: 4px; cursor: pointer; }
+
+  /* Mobile layout: below this width, show either the contact list or
+     the open chat full-screen (never both squeezed side by side), the
+     same pattern every mobile messaging app uses. Toggled by adding
+     .chat-open to <body> when a chat/group is opened (see app.js). */
+  @media (max-width: 700px) {
+    #login-screen { max-width: 100%; margin: 0; border-radius: 0; min-height: 100vh; box-sizing: border-box; }
+    #app-screen { flex-direction: column; }
+    #sidebar { width: 100%; }
+    #chat-area { display: none; }
+    body.chat-open #sidebar { display: none; }
+    body.chat-open #chat-area { display: flex; }
+    #back-to-list-btn { display: inline-block; }
+    #emoji-picker { grid-template-columns: repeat(6, 1fr); }
+    #gif-results { grid-template-columns: repeat(2, 1fr); }
+    #sidebar-footer button, #entry-row button { min-height: 40px; }
+    .msg { max-width: 80%; }
+  }
 </style>
 </head>
 <body>
@@ -59,10 +97,6 @@
   <input id="username" autocomplete="username">
   <label>Password</label>
   <input id="password" type="password" autocomplete="current-password">
-  <label>Accounts server URL (leave blank for default)</label>
-  <input id="accounts-url">
-  <label>Relay WebSocket URL (leave blank for default)</label>
-  <input id="relay-url">
   <div>
     <button id="login-btn">Log in</button>
     <button id="signup-btn">Create account</button>
@@ -107,6 +141,7 @@
 <div id="app-screen" hidden>
   <div id="sidebar">
     <div id="sidebar-header">
+      <img id="my-avatar" class="avatar" hidden>
       Signed in as <b id="my-username"></b>
       <a href="#" id="logout-link" style="font-size:12px; float:right;">Log out</a>
       <div id="relay-status" style="font-size:12px;color:#666;">Relay: connecting…</div>
@@ -123,6 +158,8 @@
         <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
       </div>
       <button id="my-card-btn">My contact card</button>
+      <input id="avatar-file" type="file" accept="image/*" hidden>
+      <button id="set-avatar-btn">Set avatar…</button>
       <div id="backup-row" hidden>
         <input id="backup-password" type="password" placeholder="Choose a backup password" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
         <button id="backup-confirm">Download backup</button>
@@ -140,7 +177,8 @@
   </div>
   <div id="chat-area">
     <div id="chat-header">
-      <div id="chat-title">Select a contact</div>
+      <button id="back-to-list-btn" type="button">← Back</button>
+      <div id="chat-title"><span id="chat-title-avatar"></span><span id="chat-title-text">Select a contact</span></div>
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
       <div id="call-controls" hidden style="margin-top:4px;">
         <button id="call-voice-btn">📞 Call</button>
@@ -172,8 +210,13 @@
     </div>
     <div id="messages"></div>
     <div id="emoji-picker" class="hide"></div>
+    <div id="gif-picker">
+      <input id="gif-search" placeholder="Search Giphy…">
+      <div id="gif-results"></div>
+    </div>
     <div id="entry-row">
       <button id="emoji-btn" type="button" title="Emoji">😀</button>
+      <button id="gif-btn" type="button" title="GIF">GIF</button>
       <button id="attach-btn" type="button" title="Attach a photo, GIF, audio, or video">📎</button>
       <input id="attach-file" type="file" accept="image/*,audio/*,video/*" hidden>
       <input id="message-input" placeholder="Type a message…">
@@ -198,14 +241,16 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=12"></script>
-<script src="js/storage.js?v=12"></script>
-<script src="js/network.js?v=12"></script>
-<script src="js/auth.js?v=12"></script>
-<script src="js/backup.js?v=12"></script>
-<script src="js/attachments.js?v=12"></script>
-<script src="js/groups.js?v=12"></script>
-<script src="js/calls.js?v=12"></script>
-<script src="js/app.js?v=12"></script>
+<script src="js/crypto.js?v=14"></script>
+<script src="js/storage.js?v=14"></script>
+<script src="js/network.js?v=14"></script>
+<script src="js/auth.js?v=14"></script>
+<script src="js/backup.js?v=14"></script>
+<script src="js/attachments.js?v=14"></script>
+<script src="js/groups.js?v=14"></script>
+<script src="js/calls.js?v=14"></script>
+<script src="js/avatars.js?v=14"></script>
+<script src="js/giphy.js?v=14"></script>
+<script src="js/app.js?v=14"></script>
 </body>
 </html>

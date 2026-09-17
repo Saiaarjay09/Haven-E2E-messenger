@@ -66,16 +66,35 @@ const HavenStorage = (() => {
       return new Store(db, storageKey);
     }
 
-    async upsertContact(fingerprint, username, identityPubHex, verified = false) {
-      await tx(this.db, "contacts", "readwrite", (store) => {
-        store.put({ fingerprint, username, identityPubHex, verified, addedAt: Date.now() });
-      });
+    // `verified` defaults to preserving whatever was already stored
+    // rather than to false — this is called on every relay
+    // (re)connection (see network.js's _registerConnection), and a
+    // literal `= false` default here would silently wipe out a
+    // contact's safety-number verification on every reconnect.
+    async upsertContact(fingerprint, username, identityPubHex, verified) {
+      const existing = await this.getContact(fingerprint);
+      const record = {
+        fingerprint,
+        username,
+        identityPubHex,
+        verified: verified !== undefined ? verified : existing ? existing.verified : false,
+        avatarDataUrl: existing ? existing.avatarDataUrl : undefined,
+        addedAt: existing ? existing.addedAt : Date.now(),
+      };
+      await tx(this.db, "contacts", "readwrite", (store) => store.put(record));
     }
 
     async setVerified(fingerprint, verified) {
       const existing = await this.getContact(fingerprint);
       if (!existing) return;
       existing.verified = verified;
+      await tx(this.db, "contacts", "readwrite", (store) => store.put(existing));
+    }
+
+    async setAvatar(fingerprint, avatarDataUrl) {
+      const existing = await this.getContact(fingerprint);
+      if (!existing) return;
+      existing.avatarDataUrl = avatarDataUrl;
       await tx(this.db, "contacts", "readwrite", (store) => store.put(existing));
     }
 
