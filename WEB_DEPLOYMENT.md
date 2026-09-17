@@ -123,8 +123,21 @@ restarting three terminal windows every time, use `launchd` (macOS's
 service manager) plus Cloudflare quick tunnels. The tradeoff versus a real
 server: it's genuinely "set and forget" for crashes and reboots, but it's
 still only reachable while your Mac is on, and each tunnel's URL will
-change if that tunnel process itself ever restarts (crash or reboot) —
-run `deploy/check-tunnels.sh` any time to read the current URLs back out.
+change whenever that tunnel process restarts — including on its own,
+since Cloudflare periodically evicts quick tunnels server-side with no
+warning (observed anywhere from under a day to a couple of days). Run
+`deploy/check-tunnels.sh` any time to read the current URLs back out.
+The only way to get a URL that never changes is a real domain routed
+through a named Cloudflare tunnel or a real server (Option B).
+
+Because cloudflared doesn't exit or crash when Cloudflare evicts it — it
+just retries forever without ever reconnecting — launchd's own
+crash-restart never notices anything is wrong on its own. Step 6 below
+sets up a watchdog that actually checks and fixes this automatically, so
+an eviction causes at most a couple of minutes of downtime instead of
+lasting until someone notices and restarts it by hand. It does not stop
+the URL from changing when this happens — only a named tunnel (a domain)
+fixes that part.
 
 1. Download `cloudflared` somewhere permanent — **not** `/tmp`, which
    doesn't survive a reboot:
@@ -154,6 +167,13 @@ run `deploy/check-tunnels.sh` any time to read the current URLs back out.
    ```
 5. To stop everything: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.haven.<name>.plist`
    for each job, or just delete the plist files and reboot.
+6. Set up the auto-recovery watchdog: copy `com.haven.tunnel-watchdog.plist`
+   into `~/Library/LaunchAgents/` too (fill in your username/paths), then
+   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.haven.tunnel-watchdog.plist`.
+   It runs `deploy/watch-tunnels.sh` every 2 minutes, which checks whether
+   each tunnel's current URL actually responds and force-restarts any that
+   don't — see that script's own comments for exactly why this is needed.
+   Check `~/Library/Logs/Haven/tunnel-watchdog.log` to see when it's fired.
 
 Because the accounts database now lives outside the repo (so `git pull`
 never touches it), point `HAVEN_ACCOUNTS_DB` in the accounts plist at

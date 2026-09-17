@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs deploy/watch-tunnels.sh every 2 minutes. See that script's own
+  header comment for why this exists: a Cloudflare quick tunnel that
+  gets evicted server-side does NOT make cloudflared exit, so launchd's
+  own KeepAlive/crash-restart never notices anything is wrong on its
+  own — this job is what actually checks and force-restarts a dead one.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haven.tunnel-watchdog</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <!-- Adjust this path to wherever you cloned Haven -->
+        <string>/Users/YOURNAME/Developer/haven/deploy/watch-tunnels.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>120</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/tunnel-watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/tunnel-watchdog.log</string>
+</dict>
+</plist>
