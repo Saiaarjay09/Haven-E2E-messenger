@@ -120,24 +120,57 @@ too if you already know that stack.
 Options A and B assume a server. If you'd rather run everything on your own
 Mac and just need it to survive reboots and crashes without you manually
 restarting three terminal windows every time, use `launchd` (macOS's
-service manager) plus Cloudflare quick tunnels. The tradeoff versus a real
-server: it's genuinely "set and forget" for crashes and reboots, but it's
-still only reachable while your Mac is on, and each tunnel's URL will
-change whenever that tunnel process restarts — including on its own,
-since Cloudflare periodically evicts quick tunnels server-side with no
-warning (observed anywhere from under a day to a couple of days). Run
-`deploy/check-tunnels.sh` any time to read the current URLs back out.
-The only way to get a URL that never changes is a real domain routed
-through a named Cloudflare tunnel or a real server (Option B).
+service manager) to keep the three Haven processes running, plus one of
+the two tunnel approaches below to actually expose them to the internet.
 
-Because cloudflared doesn't exit or crash when Cloudflare evicts it — it
-just retries forever without ever reconnecting — launchd's own
-crash-restart never notices anything is wrong on its own. Step 6 below
-sets up a watchdog that actually checks and fixes this automatically, so
-an eviction causes at most a couple of minutes of downtime instead of
-lasting until someone notices and restarts it by hand. It does not stop
-the URL from changing when this happens — only a named tunnel (a domain)
-fixes that part.
+### C1 (recommended): Tailscale Funnel — free, and the URL never changes
+
+[Tailscale](https://tailscale.com) is free for personal use and its
+Funnel feature gives your Mac a permanent public hostname tied to your
+device's name — `https://<device>.<your-tailnet>.ts.net` — instead of a
+randomly-generated one that changes every time a tunnel process restarts.
+No domain purchase, no NS record changes, nothing to renew.
+
+1. Install Tailscale (the [standalone macOS package](https://pkgs.tailscale.com/stable/#macos)
+   doesn't require an Apple ID) and sign in with any free SSO provider
+   (Google/GitHub/Microsoft) — this part needs a human in a browser, it
+   can't be scripted.
+2. Optionally rename the device to something nicer than your Mac's
+   default name — this becomes part of the permanent URL:
+   ```bash
+   tailscale set --hostname=haven
+   ```
+3. The first time you expose anything, Tailscale will print a one-time
+   approval link (`https://login.tailscale.com/f/funnel?node=...`) —
+   visit it and approve Funnel for your account.
+4. Expose each of Haven's three services on one of Funnel's three
+   allowed ports (443, 8443, 10000 — this restriction is on Tailscale's
+   side, not Haven's):
+   ```bash
+   tailscale funnel --bg --https=443   8899  # static files
+   tailscale funnel --bg --https=8443  8000  # accounts API
+   tailscale funnel --bg --https=10000 8444  # relay (WebSocket)
+   ```
+5. Your permanent links (see `tailscale funnel status` any time to
+   re-check them):
+   - Web app: `https://<device>.<tailnet>.ts.net`
+   - Accounts server URL: `https://<device>.<tailnet>.ts.net:8443`
+   - Relay WebSocket URL: `wss://<device>.<tailnet>.ts.net:10000`
+
+   These only change if you rename the device or its tailnet — routine
+   restarts, reboots, and crashes don't affect them. If you do rename it,
+   re-run `tailscale funnel reset` then step 4 again under the new name.
+6. Keep the three Haven processes themselves running via the
+   `com.haven.accounts.plist` / `com.haven.relay.plist` /
+   `com.haven.static.plist` templates in `deploy/`, same as below.
+
+### C2 (alternative): Cloudflare quick tunnels — free, but the URL rotates
+
+No account needed at all, but Cloudflare's free "quick tunnels" aren't
+meant for continuous uptime: they can be evicted server-side with no
+warning (observed anywhere from under a day to a couple of days), and
+when that happens the URL changes. Use this only if you'd rather not
+create a Tailscale account.
 
 1. Download `cloudflared` somewhere permanent — **not** `/tmp`, which
    doesn't survive a reboot:

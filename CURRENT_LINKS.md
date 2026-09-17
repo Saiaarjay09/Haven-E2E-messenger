@@ -1,12 +1,10 @@
 # Current Haven links
 
-Auto-updated by `deploy/publish-urls.sh` whenever the tunnel URLs
-change (checked every 2 minutes). **Don't edit this file by hand** —
-it will be overwritten on the next automatic update. See
-[WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) for what these mean.
+These are permanent — tied to a Tailscale Funnel hostname, not a
+short-lived tunnel, so unlike this file's earlier history they should
+never need to change. See [WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) for
+how this is set up.
 
-Last updated: 2026-09-17T10:07:02Z
-
-- **Open the app:** https://packets-volume-supplement-administration.trycloudflare.com
-- **Accounts server URL:** https://rays-sub-conscious-apparently.trycloudflare.com
-- **Relay WebSocket URL:** wss://hold-snap-hawk-oecd.trycloudflare.com
+- **Open the app:** https://haven.taila6d3cb.ts.net
+- **Accounts server URL:** https://haven.taila6d3cb.ts.net:8443
+- **Relay WebSocket URL:** wss://haven.taila6d3cb.ts.net:10000
