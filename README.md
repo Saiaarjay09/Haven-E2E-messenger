@@ -12,17 +12,16 @@ discovery, a self-hosted relay for reaching friends off your LAN with
 offline message queuing, real end-to-end encrypted group chats,
 images/GIFs/stickers/links, voice and video calls, and on-device AI
 (speech-to-text, translation, a local assistant, and live call captions).
-A hosted web app is also live at a basic-but-real level: sign up, add a
-contact, and exchange genuine end-to-end encrypted messages entirely in
-the browser, with global unique usernames and recovery-phrase password
-reset — see `webapp/README.md` for what that involved (and the real
-security tradeoff it accepts that this desktop app doesn't have). Groups,
-calls, rich content, and on-device AI in the browser aren't built yet.
+A hosted web app is also live: sign up, add a contact, and exchange
+genuine end-to-end encrypted messages entirely in the browser, with
+global unique usernames, recovery-phrase password reset, encrypted
+chat backup/restore, emoji, photo/GIF/audio/video sharing, group chats,
+and voice/video calls — see `webapp/README.md` for what that involved
+(and the real security tradeoff it accepts that this desktop app
+doesn't have). On-device AI in the browser isn't built yet.
 
 **Want to actually try the hosted web app right now?** See
-[CURRENT_LINKS.md](CURRENT_LINKS.md) for the current live URL (it
-changes periodically — that file is always kept up to date automatically,
-see `WEB_DEPLOYMENT.md`).
+[CURRENT_LINKS.md](CURRENT_LINKS.md) for the current live URL.
 
 ## Run it (LAN only, no setup)
 

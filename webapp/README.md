@@ -183,14 +183,39 @@ database entirely (simulating a brand new device), and confirmed restoring
 from the file recovered the identical identity (same safety number), the
 same contact, and the same message history.
 
-## What's NOT built yet (Phase 7e and beyond)
+## What's built: groups, calls, and rich content (Phase 7e)
 
-- **Groups, calls, rich content, on-device AI in-browser.** Each is a
-  real, separate port of `groups.py`/`calls.py`/`attachments.py`/`ai.py`
-  once there's appetite to continue — calls would use
-  WebRTC/`getUserMedia`, on-device AI would need Whisper/an LLM running
-  via WASM (heavier and slower than the desktop app's native libraries;
-  likely reduced scope rather than full parity).
+- **Emoji** (`app.js`) — a picker button next to the message input; no
+  protocol changes needed since emoji are already valid UTF-8 in an
+  ordinary text message.
+- **Photo/GIF/audio/video sharing** (`attachments.js`) — mirrors
+  `haven/attachments.py`'s exact envelope (filename + mime + base64
+  bytes) and 8 MB limit, so an attachment sent from the web client is
+  wire-compatible with the desktop app. Required raising the relay's
+  WebSocket frame-size limit (see `haven/relay_server.py`), since the
+  browser's hex-encoded ciphertext plus the attachment's own base64
+  needs real headroom over that default.
+- **Group chats** (`groups.js`) — a direct port of `haven/groups.py`'s
+  sender-keys design: control messages and group chat both ride the
+  existing 1:1 encrypted channel as `kind="group"`, no separate
+  transport or server-side state. Verified live with three real
+  accounts, including sender-key distribution to a member with no
+  prior 1:1 relationship with the sender — the actual point of
+  sender-keys — and member removal correctly rotating the remover's
+  chain.
+- **Voice and video calls** (`calls.js`) — a direct port of
+  `haven/calls.py`'s deliberate no-WebRTC design: signaling and every
+  audio/video chunk are `kind="call"` messages on the same encrypted
+  channel, using `getUserMedia`/Web Audio/`<canvas>` in place of
+  desktop's `sounddevice`/`opencv`. Same accepted tradeoff as desktop —
+  walkie-talkie/early-Skype quality, not enterprise telephony — see
+  `calls.py`'s own docstring for why that's a deliberate choice.
+
+## What's NOT built yet
+
+- **On-device AI in-browser** (`haven/ai.py`'s equivalent) — would need
+  Whisper/an LLM running via WASM, heavier and slower than the desktop
+  app's native libraries; likely reduced scope rather than full parity.
 - **No LAN/direct-connect path for the browser client** — inherent to
   running in a browser, not a gap to close; every contact goes through
   a relay.
