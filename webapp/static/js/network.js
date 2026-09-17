@@ -190,7 +190,11 @@ const HavenNetwork = (() => {
       await this.store.saveSession(fp, conn.session);
       const kind = frame.kind || "text";
       const text = H.fromUtf8(plaintext);
-      await this.store.saveMessage(fp, "in", text, kind);
+      // "group" frames are sender-keys control/chat traffic riding this
+      // same pairwise channel (see groups.js) — they get routed to the
+      // group layer entirely, not saved as if they were a normal 1:1
+      // message with this contact.
+      if (kind !== "group") await this.store.saveMessage(fp, "in", text, kind);
       if (this.onMessage) this.onMessage(fp, kind, text, H.bytesToHex(senderIdentityPub));
     }
 
@@ -206,7 +210,7 @@ const HavenNetwork = (() => {
         ciphertext: H.bytesToHex(envelope.ciphertext),
         kind,
       });
-      await this.store.saveMessage(fingerprint, "out", text, kind);
+      if (kind !== "group") await this.store.saveMessage(fingerprint, "out", text, kind);
     }
   }
 

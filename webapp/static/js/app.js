@@ -1,7 +1,7 @@
 /**
- * Minimal Haven web client UI glue. Text chat only (Phase 7d MVP) —
- * see webapp/README.md for what's intentionally not built yet (groups,
- * calls, rich content, on-device AI in-browser).
+ * Haven web client UI glue — see webapp/README.md for what's still not
+ * built (calls and on-device AI in-browser; groups, attachments, and
+ * emoji are now implemented, see groups.js/attachments.js).
  */
 
 (() => {
@@ -15,8 +15,10 @@
     net: null,
     store: null,
     relay: null,
+    groupManager: null,
     peers: new Map(), // fingerprint -> {username, identityPubHex}
     openFingerprint: null,
+    openGroupId: null,
   };
 
   const el = (id) => document.getElementById(id);
@@ -169,7 +171,22 @@
     state.username = username;
     state.store = await HavenStorage.Store.open(username, identity.privateBytes);
     state.net = new HavenNetwork.NetworkManager(identity, username, state.store);
-    state.net.onMessage = (fp, kind, text) => {
+    state.groupManager = await HavenGroups.GroupManager.create(state.net, state.store, identity, username);
+    state.groupManager.onGroupMessage = (groupId, senderUsername, text, kind) => {
+      if (state.openGroupId === groupId) {
+        appendLine(senderUsername === state.username ? "me" : "them", text, kind, senderUsername);
+      }
+      refreshPeerList();
+    };
+    state.groupManager.onGroupUpdate = (groupId) => {
+      refreshPeerList();
+      if (state.openGroupId === groupId) renderGroupHeader(groupId);
+    };
+    state.net.onMessage = (fp, kind, text, senderPubHex) => {
+      if (kind === "group") {
+        state.groupManager.handleIncoming(senderPubHex, text);
+        return;
+      }
       if (fp === state.openFingerprint) appendLine("them", text, kind);
       refreshPeerList();
     };
@@ -207,10 +224,128 @@
       li.onclick = () => openChat(fp);
       list.appendChild(li);
     }
+    if (state.groupManager) {
+      for (const g of state.groupManager.listGroups()) {
+        const li = document.createElement("li");
+        li.textContent = `👥 ${g.name}${g.removed ? " (removed)" : ""}`;
+        li.className = g.groupId === state.openGroupId ? "selected" : "";
+        li.onclick = () => openGroup(g.groupId);
+        list.appendChild(li);
+      }
+    }
+  }
+
+  function renderGroupHeader(groupId) {
+    const g = state.groupManager.listGroups().find((x) => x.groupId === groupId);
+    if (!g) return;
+    el("chat-title").textContent = g.name + (g.removed ? " (you were removed)" : "");
+    el("group-controls").hidden = false;
+    const label = el("group-members-label");
+    label.textContent = "";
+    label.appendChild(document.createTextNode("Members: "));
+    for (const [pubHex, uname] of g.members) {
+      const chip = document.createElement("span");
+      chip.style.marginRight = "8px";
+      if (pubHex === state.groupManager.myPubHex) {
+        chip.textContent = uname + " (you)";
+      } else {
+        chip.textContent = uname + " ";
+        const removeLink = document.createElement("a");
+        removeLink.href = "#";
+        removeLink.textContent = "[remove]";
+        removeLink.onclick = async (e) => {
+          e.preventDefault();
+          await state.groupManager.removeMember(groupId, pubHex);
+        };
+        chip.appendChild(removeLink);
+      }
+      label.appendChild(chip);
+    }
+  }
+
+  function openNewGroup() {
+    const list = el("new-group-members");
+    list.innerHTML = "";
+    for (const meta of state.peers.values()) {
+      const label = document.createElement("label");
+      label.style.display = "block";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = meta.identityPubHex;
+      cb.dataset.username = meta.username;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(" " + meta.username));
+      list.appendChild(label);
+    }
+    el("new-group-name").value = "";
+    el("new-group-row").hidden = false;
+  }
+
+  async function confirmNewGroup() {
+    const name = el("new-group-name").value.trim();
+    const checked = Array.from(el("new-group-members").querySelectorAll("input:checked"));
+    if (!name || checked.length === 0) {
+      return alert("Enter a group name and pick at least one member.");
+    }
+    const members = checked.map((cb) => ({ username: cb.dataset.username, identityPubHex: cb.value }));
+    el("new-group-row").hidden = true;
+    const groupId = await state.groupManager.createGroup(name, members);
+    refreshPeerList();
+    await openGroup(groupId);
+  }
+
+  function openGroupAddMember() {
+    const g = state.groupManager.listGroups().find((x) => x.groupId === state.openGroupId);
+    if (!g) return;
+    const list = el("group-add-member-list");
+    list.innerHTML = "";
+    for (const meta of state.peers.values()) {
+      if (g.members.has(meta.identityPubHex)) continue;
+      const label = document.createElement("label");
+      label.style.display = "block";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = meta.identityPubHex;
+      cb.dataset.username = meta.username;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(" " + meta.username));
+      list.appendChild(label);
+    }
+    el("group-add-member-row").hidden = false;
+  }
+
+  async function confirmGroupAddMember() {
+    const checked = Array.from(el("group-add-member-list").querySelectorAll("input:checked"));
+    el("group-add-member-row").hidden = true;
+    for (const cb of checked) {
+      await state.groupManager.addMember(state.openGroupId, cb.dataset.username, cb.value);
+    }
+  }
+
+  async function openGroup(groupId) {
+    state.openGroupId = groupId;
+    state.openFingerprint = null;
+    el("safety-number").textContent = "";
+    el("verify-btn").hidden = true;
+    el("group-add-member-row").hidden = true;
+    refreshPeerList();
+    renderGroupHeader(groupId);
+
+    const g = state.groupManager.listGroups().find((x) => x.groupId === groupId);
+    const messages = el("messages");
+    messages.innerHTML = "";
+    for (const m of await state.groupManager.groupHistory(groupId)) {
+      const isMe = m.senderIdentityPubHex === state.groupManager.myPubHex;
+      const senderLabel = isMe ? null : g.members.get(m.senderIdentityPubHex) || "unknown";
+      appendLine(isMe ? "me" : "them", m.text, m.kind, senderLabel);
+    }
   }
 
   async function openChat(fingerprint) {
     state.openFingerprint = fingerprint;
+    state.openGroupId = null;
+    el("group-controls").hidden = true;
+    el("group-add-member-row").hidden = true;
     const meta = state.peers.get(fingerprint);
     el("chat-title").textContent = meta ? meta.username : fingerprint;
     refreshPeerList();
@@ -244,10 +379,10 @@
     }
   }
 
-  function appendLine(who, text, kind = "text") {
+  function appendLine(who, text, kind = "text", senderLabel = null) {
     const div = document.createElement("div");
     div.className = "msg " + who;
-    const prefix = who === "me" ? "you: " : who === "them" ? "" : "* ";
+    const prefix = who === "me" ? "you: " : who === "them" ? (senderLabel ? senderLabel + ": " : "") : "* ";
     if (kind === "text") {
       div.textContent = prefix + text;
     } else {
@@ -301,8 +436,13 @@
 
   async function sendMessage() {
     const text = el("message-input").value.trim();
-    if (!text || !state.openFingerprint) return;
+    if (!text || (!state.openFingerprint && !state.openGroupId)) return;
     el("message-input").value = "";
+    if (state.openGroupId) {
+      await state.groupManager.sendGroupMessage(state.openGroupId, text);
+      appendLine("me", text);
+      return;
+    }
     if (!(await ensureConnected(state.openFingerprint))) return;
     try {
       await state.net.sendText(state.openFingerprint, text);
@@ -314,13 +454,18 @@
   }
 
   async function sendAttachment(file) {
-    if (!state.openFingerprint) return;
+    if (!state.openFingerprint && !state.openGroupId) return;
     let envelope, kind;
     try {
       envelope = await HavenAttachments.encodeAttachment(file);
       kind = HavenAttachments.guessKind(file);
     } catch (e) {
       appendLine("sys", "Attachment failed: " + e.message);
+      return;
+    }
+    if (state.openGroupId) {
+      await state.groupManager.sendGroupMessage(state.openGroupId, envelope, kind);
+      appendLine("me", envelope, kind);
       return;
     }
     if (!(await ensureConnected(state.openFingerprint))) return;
@@ -435,5 +580,11 @@
     el("backup-btn").onclick = openBackup;
     el("backup-cancel").onclick = () => (el("backup-row").hidden = true);
     el("backup-confirm").onclick = doBackup;
+    el("new-group-btn").onclick = openNewGroup;
+    el("new-group-cancel").onclick = () => (el("new-group-row").hidden = true);
+    el("new-group-confirm").onclick = confirmNewGroup;
+    el("group-add-member-btn").onclick = openGroupAddMember;
+    el("group-add-member-cancel").onclick = () => (el("group-add-member-row").hidden = true);
+    el("group-add-member-confirm").onclick = confirmGroupAddMember;
   });
 })();

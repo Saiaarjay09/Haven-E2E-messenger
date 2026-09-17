@@ -11,7 +11,7 @@ const HavenStorage = (() => {
 
   function openDb(username) {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(`haven-${username}`, 1);
+      const req = indexedDB.open(`haven-${username}`, 2);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains("contacts")) {
@@ -23,6 +23,13 @@ const HavenStorage = (() => {
         if (!db.objectStoreNames.contains("messages")) {
           const store = db.createObjectStore("messages", { keyPath: "id", autoIncrement: true });
           store.createIndex("fingerprint", "fingerprint", { unique: false });
+        }
+        if (!db.objectStoreNames.contains("groups")) {
+          db.createObjectStore("groups", { keyPath: "groupId" });
+        }
+        if (!db.objectStoreNames.contains("groupMessages")) {
+          const store = db.createObjectStore("groupMessages", { keyPath: "id", autoIncrement: true });
+          store.createIndex("groupId", "groupId", { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -136,6 +143,53 @@ const HavenStorage = (() => {
       for (const row of rows) {
         const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(row.fingerprint));
         out.push({ fingerprint: row.fingerprint, direction: row.direction, kind: row.kind, text: H.fromUtf8(plaintext), ts: row.timestamp });
+      }
+      return out;
+    }
+
+    // Group state (membership + sender-key chains) is encrypted the same
+    // way a 1:1 session is — see groups.js for what "state" contains.
+    async saveGroup(groupId, name, state) {
+      const blob = await H.encryptAuthenticated(this.storageKey, H.utf8(JSON.stringify(state)), H.utf8(groupId));
+      await tx(this.db, "groups", "readwrite", (store) => {
+        store.put({ groupId, name, blobHex: H.bytesToHex(blob), updatedAt: Date.now() });
+      });
+    }
+
+    async loadGroup(groupId) {
+      const t = this.db.transaction("groups", "readonly");
+      const row = await reqToPromise(t.objectStore("groups").get(groupId));
+      if (!row) return null;
+      const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(groupId));
+      return { name: row.name, state: JSON.parse(H.fromUtf8(plaintext)) };
+    }
+
+    async listGroups() {
+      const t = this.db.transaction("groups", "readonly");
+      const rows = await reqToPromise(t.objectStore("groups").getAll());
+      return rows.map((r) => ({ groupId: r.groupId, name: r.name }));
+    }
+
+    async saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind = "text", timestamp = Date.now()) {
+      const blob = await H.encryptAuthenticated(this.storageKey, H.utf8(plaintext), H.utf8(groupId));
+      await tx(this.db, "groupMessages", "readwrite", (store) => {
+        store.add({ groupId, senderIdentityPubHex, kind, blobHex: H.bytesToHex(blob), timestamp });
+      });
+    }
+
+    async groupHistory(groupId) {
+      const t = this.db.transaction("groupMessages", "readonly");
+      const index = t.objectStore("groupMessages").index("groupId");
+      const rows = await reqToPromise(index.getAll(groupId));
+      const out = [];
+      for (const row of rows) {
+        const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(groupId));
+        out.push({
+          senderIdentityPubHex: row.senderIdentityPubHex,
+          kind: row.kind,
+          text: H.fromUtf8(plaintext),
+          ts: row.timestamp,
+        });
       }
       return out;
     }

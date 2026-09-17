@@ -127,12 +127,28 @@
         <button id="backup-cancel">Cancel</button>
       </div>
       <button id="backup-btn">Backup…</button>
+      <div id="new-group-row" hidden>
+        <input id="new-group-name" placeholder="Group name" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+        <div id="new-group-members" style="max-height:120px; overflow-y:auto; margin-bottom:4px; font-size:13px; background:#fafafa; border:1px solid #eee; padding:4px;"></div>
+        <button id="new-group-confirm">Create</button>
+        <button id="new-group-cancel">Cancel</button>
+      </div>
+      <button id="new-group-btn">New group…</button>
     </div>
   </div>
   <div id="chat-area">
     <div id="chat-header">
       <div id="chat-title">Select a contact</div>
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
+      <div id="group-controls" hidden style="margin-top:4px; font-size:13px;">
+        <span id="group-members-label"></span>
+        <button id="group-add-member-btn" style="margin-left:8px;">Add member…</button>
+        <div id="group-add-member-row" hidden style="margin-top:6px;">
+          <div id="group-add-member-list" style="max-height:120px; overflow-y:auto; margin-bottom:4px; background:#fafafa; border:1px solid #eee; padding:4px;"></div>
+          <button id="group-add-member-confirm">Add</button>
+          <button id="group-add-member-cancel">Cancel</button>
+        </div>
+      </div>
     </div>
     <div id="messages"></div>
     <div id="emoji-picker" class="hide"></div>
@@ -162,12 +178,13 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=8"></script>
-<script src="js/storage.js?v=8"></script>
-<script src="js/network.js?v=8"></script>
-<script src="js/auth.js?v=8"></script>
-<script src="js/backup.js?v=8"></script>
-<script src="js/attachments.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/crypto.js?v=9"></script>
+<script src="js/storage.js?v=9"></script>
+<script src="js/network.js?v=9"></script>
+<script src="js/auth.js?v=9"></script>
+<script src="js/backup.js?v=9"></script>
+<script src="js/attachments.js?v=9"></script>
+<script src="js/groups.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>
