@@ -245,6 +245,49 @@
     refreshPeerList();
     showScreen("app");
     el("my-username").textContent = state.username;
+    saveSession(username, identity.privateBytes);
+  }
+
+  // "Stay signed in" support: the decrypted identity key is cached in
+  // this browser's localStorage so a reload or reopened tab skips the
+  // login form entirely. This is a real, deliberate tradeoff, not an
+  // oversight — the key already sits in JS memory for as long as the
+  // tab is open, and webapp/README.md's whole premise is that this app
+  // already trusts the code the server sends on every visit, so the
+  // marginal new risk is narrower: anyone with local access to THIS
+  // browser profile (not just a malicious server) can now also reach
+  // the account without the password. "Log out" clears it for anyone
+  // who wants that reduced on a shared/public computer.
+  const SESSION_KEY = "haven-session";
+
+  function saveSession(username, privateBytes) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ username, privateBytesHex: H.bytesToHex(privateBytes) }));
+    } catch (e) {
+      console.error("could not save session (private/incognito mode blocks this):", e);
+    }
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearSession() {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function doLogout() {
+    clearSession();
+    location.reload();
   }
 
   function refreshPeerList() {
@@ -494,25 +537,43 @@
 
   async function doStartCall(video) {
     if (!state.openFingerprint) return;
-    if (!(await ensureConnected(state.openFingerprint))) return;
-    await state.callManager.startCall(state.openFingerprint, video);
+    try {
+      if (!(await ensureConnected(state.openFingerprint))) return;
+      await state.callManager.startCall(state.openFingerprint, video);
+    } catch (e) {
+      console.error("startCall failed:", e);
+      appendLine("sys", "Could not start call: " + e.message);
+    }
   }
 
   async function doAcceptCall() {
     if (!state.openFingerprint) return;
     el("incoming-call-banner").classList.add("hide");
-    await state.callManager.acceptCall(state.openFingerprint);
+    try {
+      await state.callManager.acceptCall(state.openFingerprint);
+    } catch (e) {
+      console.error("acceptCall failed:", e);
+      appendLine("sys", "Could not accept call: " + e.message);
+    }
   }
 
   async function doRejectCall() {
     if (!state.openFingerprint) return;
     el("incoming-call-banner").classList.add("hide");
-    await state.callManager.rejectCall(state.openFingerprint);
+    try {
+      await state.callManager.rejectCall(state.openFingerprint);
+    } catch (e) {
+      console.error("rejectCall failed:", e);
+    }
   }
 
   async function doHangup() {
     if (!state.openFingerprint) return;
-    await state.callManager.hangup(state.openFingerprint);
+    try {
+      await state.callManager.hangup(state.openFingerprint);
+    } catch (e) {
+      console.error("hangup failed:", e);
+    }
   }
 
   function doToggleMute() {
@@ -647,7 +708,18 @@
     }
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("DOMContentLoaded", async () => {
+    const saved = loadSession();
+    if (saved) {
+      try {
+        const identity = H.keyPairFromPrivateBytes(H.hexToBytes(saved.privateBytesHex));
+        await onLoggedIn(identity, saved.username);
+      } catch (e) {
+        console.error("auto-login from saved session failed:", e);
+        clearSession();
+      }
+    }
+
     el("accounts-url").placeholder = defaultAccountsUrl();
     el("relay-url").placeholder = defaultRelayWsUrl();
     el("signup-btn").onclick = doSignup;
@@ -697,5 +769,9 @@
     el("incoming-call-reject").onclick = doRejectCall;
     el("call-hangup-btn").onclick = doHangup;
     el("call-mute-btn").onclick = doToggleMute;
+    el("logout-link").onclick = (e) => {
+      e.preventDefault();
+      doLogout();
+    };
   });
 })();
