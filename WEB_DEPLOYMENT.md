@@ -45,8 +45,14 @@ uvicorn webapp.accounts_server:app --host 0.0.0.0 --port 8000
 # Terminal/service 2 — relay, TCP for desktop clients + WebSocket for browsers:
 python3 -m haven.relay_server --port 8443 --ws-port 8444
 
-# Terminal/service 3 — the web client itself, just static files:
-python3 -m http.server 8899 --directory webapp/static
+# Terminal/service 3 — the web client itself. Use webapp/serve_static.py,
+# not plain `python3 -m http.server` — same CLI shape, but it also sets
+# security headers (CSP, HSTS, X-Frame-Options, etc.) the stock server
+# doesn't. If you're on a different domain than this deployment's
+# default, edit CSP_CONNECT_HOST at the top of that file first, or the
+# page's own Content-Security-Policy will block it from reaching your
+# accounts server / relay.
+python3 -m webapp.serve_static 8899 --directory webapp/static
 ```
 
 Open your firewall/security group for ports **8000, 8444, and 8899**

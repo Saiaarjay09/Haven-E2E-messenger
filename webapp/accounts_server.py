@@ -23,21 +23,72 @@ import re
 import threading
 import time
 
+import argon2
 import bcrypt
 import requests
+from argon2.exceptions import InvalidHash, VerifyMismatchError
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 from .accounts_db import AccountsDB, UsernameTaken
+from haven.crypto import SCRYPT_N_LEGACY
 
 USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,23}$")
+
+# New/reset credentials derive with this scrypt cost (client-side —
+# see auth.js's SCRYPT_N_STRONG, which must match); existing accounts
+# keep deriving with whatever cost they were created under (see
+# accounts_db.py's password_kdf_n/recovery_kdf_n, returned at
+# /api/login-salt and /api/recovery-salt) so their password keeps
+# working. OWASP's current minimum recommendation for scrypt when
+# Argon2id isn't available is N=2**17 — used here for password hashes'
+# derivation even though Argon2id (see _hasher below) IS what actually
+# protects the resulting auth_key at rest; the scrypt step is still
+# what stands between a weak password and a hosted-server compromise
+# reaching enc_key, so it's worth strengthening independently.
+SCRYPT_N_CURRENT = 2**17
+
+# Argon2id is OWASP's current first-choice recommendation for password
+# hashing (stronger against GPU/ASIC cracking than bcrypt's fixed,
+# comparatively small memory footprint), so all NEW auth_key/
+# recovery_key hashes use it. Existing bcrypt hashes keep verifying
+# correctly (see _verify_secret) and are upgraded to Argon2id in place
+# the next time their owner successfully logs in — no new dependency
+# on the client, no forced re-auth.
+_hasher = argon2.PasswordHasher()
+
+
+def _hash_secret(secret: str) -> str:
+    return _hasher.hash(secret)
+
+
+def _verify_secret(stored_hash: str, secret: str) -> tuple[bool, str | None]:
+    """Verifies `secret` against whichever hash format is actually
+    stored, transparently detected by its self-describing prefix.
+    Returns (ok, upgraded_hash) — upgraded_hash is set only when this
+    verified successfully against a legacy bcrypt hash, so the caller
+    can re-store the SAME already-proven secret under Argon2id without
+    the user doing anything differently."""
+    if stored_hash.startswith("$argon2"):
+        try:
+            _hasher.verify(stored_hash, secret)
+            return True, None
+        except (VerifyMismatchError, InvalidHash):
+            return False, None
+    try:
+        ok = bcrypt.checkpw(secret.encode(), stored_hash.encode())
+    except ValueError:
+        return False, None
+    return (True, _hash_secret(secret)) if ok else (False, None)
+
 
 # A hash of a value nobody will ever supply, used to keep login/verify
 # response timing similar whether or not the username exists — reduces
 # (does not eliminate — see webapp/README.md) username enumeration via
-# this endpoint specifically.
-_DUMMY_HASH = bcrypt.hashpw(b"no-such-account-placeholder", bcrypt.gensalt())
+# this endpoint specifically. Argon2, to match what a real (modern)
+# account's comparison now costs — see _verify_secret.
+_DUMMY_HASH = _hash_secret("no-such-account-placeholder")
 
 
 def _validate_username(username: str) -> str:
@@ -63,6 +114,12 @@ class SignupRequest(BaseModel):
     # this account won't show up in people-search until it next logs in
     # (see /api/update-identity-pub's backfill).
     identity_pub: str = ""
+    # Defaults to the legacy cost for the same reason: an older client
+    # that doesn't send these still gets a working (if less strongly
+    # derived) account rather than a broken signup. auth.js always sends
+    # SCRYPT_N_CURRENT explicitly for real signups.
+    password_kdf_n: int = SCRYPT_N_LEGACY
+    recovery_kdf_n: int = SCRYPT_N_LEGACY
 
     _validate = field_validator("username")(_validate_username)
 
@@ -89,6 +146,7 @@ class RecoveryResetRequest(BaseModel):
     new_password_salt: str
     new_password_auth_key: str
     new_encrypted_identity_blob: str
+    new_password_kdf_n: int = SCRYPT_N_LEGACY
 
 
 class SimpleRateLimiter:
@@ -117,6 +175,13 @@ db = AccountsDB(os.environ.get("HAVEN_ACCOUNTS_DB", "haven_accounts.db"))
 login_limiter = SimpleRateLimiter(max_attempts=10, window_seconds=60.0)
 signup_limiter = SimpleRateLimiter(max_attempts=5, window_seconds=60.0)
 search_limiter = SimpleRateLimiter(max_attempts=30, window_seconds=60.0)
+# Covers the three unauthenticated GETs (username-available, login-salt,
+# recovery-salt) that were previously unthrottled — none of them expose
+# a secret, but login-salt/recovery-salt's 404-vs-200 response lets an
+# unthrottled caller enumerate every username on the server; keyed by
+# IP (not username) since the whole point of enumeration is iterating
+# through many different usernames.
+lookup_limiter = SimpleRateLimiter(max_attempts=60, window_seconds=60.0)
 
 # Deliberately never accepted from a request — an OpenAI key is tied to
 # real billing, unlike this file's other secrets (auth_key/enc_key,
@@ -130,23 +195,46 @@ translate_limiter = SimpleRateLimiter(max_attempts=30, window_seconds=60.0)
 
 app = FastAPI(title="Haven Accounts Service")
 
-# Permissive CORS is safe here specifically because this API has no
-# cookie/session-based ambient authority for CORS to protect against —
-# every request carries its own explicit auth_key in the JSON body, not
-# a browser-attached credential, so there's no CSRF-style attack a
-# stricter origin policy would prevent. A real deployment MAY still want
-# to restrict this to its actual web client's origin for defense in depth;
-# it isn't required for the auth model itself to be sound.
+# CORS is scoped to this deployment's own known origins rather than "*".
+# It was never load-bearing for the auth model itself — every request
+# carries its own explicit auth_key in the JSON body, not a
+# browser-attached credential, so there's no CSRF-style attack a
+# stricter origin policy is protecting against here — but leaving it
+# wide open let ANY third-party page's JS call these APIs directly
+# against a visitor's browser (e.g. to enumerate /api/search-users),
+# which restricting to real origins closes off. Self-hosters running
+# this on a different domain should set HAVEN_ACCOUNTS_CORS_ORIGINS
+# (comma-separated) rather than editing this default.
+_DEFAULT_CORS_ORIGINS = "https://haven.taila6d3cb.ts.net,http://localhost:8899,http://127.0.0.1:8899"
+CORS_ORIGINS = [
+    o.strip() for o in os.environ.get("HAVEN_ACCOUNTS_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    # This origin is a pure JSON API — nothing here is ever meant to be
+    # framed, sniffed as a different content type, or leak the referring
+    # URL, and it never needs camera/mic access (unlike the static site,
+    # which does for calls — see its own server's headers).
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
 @app.get("/api/username-available")
-def username_available(username: str):
+def username_available(request: Request, username: str):
+    lookup_limiter.check(request.client.host if request.client else "unknown")
     try:
         _validate_username(username)
     except ValueError as exc:
@@ -157,8 +245,8 @@ def username_available(username: str):
 @app.post("/api/signup", status_code=201)
 def signup(req: SignupRequest, request_ip: str = "unknown"):
     signup_limiter.check(req.username.lower())
-    password_auth_hash = bcrypt.hashpw(req.password_auth_key.encode(), bcrypt.gensalt()).decode()
-    recovery_auth_hash = bcrypt.hashpw(req.recovery_auth_key.encode(), bcrypt.gensalt()).decode()
+    password_auth_hash = _hash_secret(req.password_auth_key)
+    recovery_auth_hash = _hash_secret(req.recovery_auth_key)
     try:
         user_id = db.create_account(
             username=req.username,
@@ -169,6 +257,8 @@ def signup(req: SignupRequest, request_ip: str = "unknown"):
             recovery_auth_hash=recovery_auth_hash,
             encrypted_identity_blob_recovery=req.encrypted_identity_blob_recovery,
             identity_pub=req.identity_pub,
+            password_kdf_n=req.password_kdf_n,
+            recovery_kdf_n=req.recovery_kdf_n,
         )
     except UsernameTaken as exc:
         raise HTTPException(status_code=409, detail="That username is already taken.") from exc
@@ -176,32 +266,38 @@ def signup(req: SignupRequest, request_ip: str = "unknown"):
 
 
 @app.get("/api/login-salt")
-def login_salt(username: str):
-    """Salts are not secret — this just lets the browser derive auth_key
-    from the password BEFORE calling /api/login, since it needs to know
-    which salt was used for this specific account first."""
+def login_salt(request: Request, username: str):
+    """Salts (and the scrypt cost they were derived with — see
+    accounts_db.py's docstring on password_kdf_n) are not secret — this
+    just lets the browser derive auth_key from the password BEFORE
+    calling /api/login, since it needs to know which salt/cost was used
+    for this specific account first."""
+    lookup_limiter.check(request.client.host if request.client else "unknown")
     row = db.get_by_username(username)
     if not row:
         raise HTTPException(status_code=404, detail="No such account.")
-    return {"password_salt": row["password_salt"]}
+    return {"password_salt": row["password_salt"], "password_kdf_n": row["password_kdf_n"]}
 
 
 @app.get("/api/recovery-salt")
-def recovery_salt(username: str):
+def recovery_salt(request: Request, username: str):
+    lookup_limiter.check(request.client.host if request.client else "unknown")
     row = db.get_by_username(username)
     if not row:
         raise HTTPException(status_code=404, detail="No such account.")
-    return {"recovery_salt": row["recovery_salt"]}
+    return {"recovery_salt": row["recovery_salt"], "recovery_kdf_n": row["recovery_kdf_n"]}
 
 
 @app.post("/api/login")
 def login(req: LoginRequest):
     login_limiter.check(req.username.lower())
     row = db.get_by_username(req.username)
-    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH.decode()
-    ok = bcrypt.checkpw(req.password_auth_key.encode(), stored_hash.encode())
+    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH
+    ok, upgraded = _verify_secret(stored_hash, req.password_auth_key)
     if not row or not ok:
         raise HTTPException(status_code=401, detail="Wrong username or password.")
+    if upgraded:
+        db.upgrade_password_hash(req.username, upgraded)
     return {"password_salt": row["password_salt"], "encrypted_identity_blob": row["encrypted_identity_blob"]}
 
 
@@ -216,10 +312,12 @@ def update_identity_pub(req: UpdateIdentityPubRequest):
     silently hijacking who a contact search actually connects you to."""
     login_limiter.check(req.username.lower())
     row = db.get_by_username(req.username)
-    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH.decode()
-    ok = bcrypt.checkpw(req.password_auth_key.encode(), stored_hash.encode())
+    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH
+    ok, upgraded = _verify_secret(stored_hash, req.password_auth_key)
     if not row or not ok:
         raise HTTPException(status_code=401, detail="Wrong username or password.")
+    if upgraded:
+        db.upgrade_password_hash(req.username, upgraded)
     db.set_identity_pub(req.username, req.identity_pub)
     return {"status": "ok"}
 
@@ -242,10 +340,12 @@ def search_users(q: str, exclude: str = ""):
 def forgot_password_verify(req: RecoveryVerifyRequest):
     login_limiter.check(f"recovery:{req.username.lower()}")
     row = db.get_by_username(req.username)
-    stored_hash = row["recovery_auth_hash"] if row else _DUMMY_HASH.decode()
-    ok = bcrypt.checkpw(req.recovery_auth_key.encode(), stored_hash.encode())
+    stored_hash = row["recovery_auth_hash"] if row else _DUMMY_HASH
+    ok, upgraded = _verify_secret(stored_hash, req.recovery_auth_key)
     if not row or not ok:
         raise HTTPException(status_code=401, detail="That recovery phrase doesn't match this account.")
+    if upgraded:
+        db.upgrade_recovery_hash(req.username, upgraded)
     return {
         "recovery_salt": row["recovery_salt"],
         "encrypted_identity_blob_recovery": row["encrypted_identity_blob_recovery"],
@@ -259,13 +359,22 @@ def forgot_password_reset(req: RecoveryResetRequest):
     defense in depth against e.g. a stolen intermediate token."""
     login_limiter.check(f"recovery-reset:{req.username.lower()}")
     row = db.get_by_username(req.username)
-    stored_hash = row["recovery_auth_hash"] if row else _DUMMY_HASH.decode()
-    ok = bcrypt.checkpw(req.recovery_auth_key.encode(), stored_hash.encode())
+    stored_hash = row["recovery_auth_hash"] if row else _DUMMY_HASH
+    ok, upgraded = _verify_secret(stored_hash, req.recovery_auth_key)
     if not row or not ok:
         raise HTTPException(status_code=401, detail="That recovery phrase doesn't match this account.")
-    new_password_auth_hash = bcrypt.hashpw(req.new_password_auth_key.encode(), bcrypt.gensalt()).decode()
+    if upgraded:
+        db.upgrade_recovery_hash(req.username, upgraded)
+    # Always Argon2id + the current scrypt cost for the freshly-set
+    # password, same as signup — a reset is exactly the moment a weaker
+    # legacy account can be brought fully up to date.
+    new_password_auth_hash = _hash_secret(req.new_password_auth_key)
     db.update_password(
-        req.username, req.new_password_salt, new_password_auth_hash, req.new_encrypted_identity_blob
+        req.username,
+        req.new_password_salt,
+        new_password_auth_hash,
+        req.new_encrypted_identity_blob,
+        password_kdf_n=req.new_password_kdf_n,
     )
     return {"status": "ok"}
 

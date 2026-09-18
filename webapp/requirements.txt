@@ -2,7 +2,8 @@
 # needed to run the desktop app in haven/.
 fastapi
 uvicorn[standard]
-bcrypt
+bcrypt  # kept only to verify existing accounts' legacy hashes — new/upgraded hashes use argon2-cffi, see accounts_server.py
+argon2-cffi
 python-multipart  # needed for /api/translate's file upload (FastAPI's UploadFile/File)
 
 # Used at runtime by /api/translate (proxies to OpenAI's Whisper API —

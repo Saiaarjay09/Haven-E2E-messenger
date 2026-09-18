@@ -556,16 +556,23 @@ const Haven = (() => {
   // derive_split_keys) and AES-256-GCM / AES-256-CTR at-rest encryption
   // ---------------------------------------------------------------------
 
+  // SCRYPT_N is the LEGACY cost, kept as the default so backup.js's
+  // export/restore (this device's own local backup files) keeps
+  // deriving byte-identical keys from files already encrypted with it.
+  // Never bump this default — auth.js passes a stronger `n` explicitly
+  // for the hosted web app's login/signup instead (see its
+  // SCRYPT_N_STRONG), which is the only thing this change is meant to
+  // strengthen.
   const SCRYPT_N = 2 ** 15;
   const SCRYPT_R = 8;
   const SCRYPT_P = 1;
 
-  async function deriveKeyFromPassword(password, saltBytes, length = 32) {
-    return scrypt(utf8(password), saltBytes, SCRYPT_N, SCRYPT_R, SCRYPT_P, length);
+  async function deriveKeyFromPassword(password, saltBytes, length = 32, n = SCRYPT_N) {
+    return scrypt(utf8(password), saltBytes, n, SCRYPT_R, SCRYPT_P, length);
   }
 
-  async function deriveSplitKeys(password, saltBytes) {
-    const combined = await deriveKeyFromPassword(password, saltBytes, 32);
+  async function deriveSplitKeys(password, saltBytes, n = SCRYPT_N) {
+    const combined = await deriveKeyFromPassword(password, saltBytes, 32, n);
     const authKey = await hkdf(combined, utf8("webapp-auth-key"));
     const encKey = await hkdf(combined, utf8("webapp-enc-key"));
     return { authKey, encKey };

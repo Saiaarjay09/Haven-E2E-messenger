@@ -8,7 +8,14 @@
     <array>
         <string>/usr/bin/python3</string>
         <string>-m</string>
-        <string>http.server</string>
+        <!-- webapp.serve_static, NOT plain http.server — it sets the
+             security headers (CSP, HSTS, etc.) the stock server
+             doesn't. Edit CSP_CONNECT_HOST at the top of
+             webapp/serve_static.py first if you're deploying under a
+             different domain than this repo's default, or the page's
+             own CSP will block it from reaching your accounts
+             server/relay. -->
+        <string>webapp.serve_static</string>
         <string>8899</string>
         <string>--bind</string>
         <string>127.0.0.1</string>

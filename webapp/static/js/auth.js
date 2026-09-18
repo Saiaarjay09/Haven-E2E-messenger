@@ -11,6 +11,16 @@ const HavenAuth = (() => {
   const H = Haven;
   let wordlist = null;
 
+  // Every NEW or reset password/recovery-phrase derivation uses this
+  // scrypt cost — stronger than crypto.js's own SCRYPT_N default, which
+  // stays fixed forever for local backup files (see crypto.js's
+  // comment). Must match accounts_server.py's SCRYPT_N_CURRENT. An
+  // EXISTING account keeps deriving with whatever cost the server
+  // says it was actually created under (see login/resetPassword below,
+  // which read password_kdf_n/recovery_kdf_n back from the server
+  // rather than assuming this constant applies to every account).
+  const SCRYPT_N_STRONG = 2 ** 17;
+
   async function loadWordlist() {
     if (!wordlist) wordlist = await fetch("js/wordlist.json").then((r) => r.json());
     return wordlist;
@@ -43,13 +53,13 @@ const HavenAuth = (() => {
       const identity = await H.generateKeyPair();
 
       const pwSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: pwAuthKey, encKey: pwEncKey } = await H.deriveSplitKeys(password, pwSalt);
+      const { authKey: pwAuthKey, encKey: pwEncKey } = await H.deriveSplitKeys(password, pwSalt, SCRYPT_N_STRONG);
       const encryptedPw = await H.encryptAuthenticated(pwEncKey, identity.privateBytes, H.utf8(username));
 
       const phrase = await generateRecoveryPhrase();
       const normalized = normalizePhrase(phrase);
       const recSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: recAuthKey, encKey: recEncKey } = await H.deriveSplitKeys(normalized, recSalt);
+      const { authKey: recAuthKey, encKey: recEncKey } = await H.deriveSplitKeys(normalized, recSalt, SCRYPT_N_STRONG);
       const encryptedRec = await H.encryptAuthenticated(recEncKey, identity.privateBytes, H.utf8(username));
 
       const resp = await fetch(`${this.baseUrl}/api/signup`, {
@@ -66,6 +76,8 @@ const HavenAuth = (() => {
           // Not a secret — see accounts_db.py's docstring. Registers
           // this account in the people-search directory right away.
           identity_pub: H.bytesToHex(identity.publicBytes),
+          password_kdf_n: SCRYPT_N_STRONG,
+          recovery_kdf_n: SCRYPT_N_STRONG,
         }),
       });
       if (!resp.ok) {
@@ -78,9 +90,12 @@ const HavenAuth = (() => {
     async login(username, password) {
       const saltResp = await fetch(`${this.baseUrl}/api/login-salt?username=${encodeURIComponent(username)}`);
       if (!saltResp.ok) throw new Error("No such account.");
-      const { password_salt } = await saltResp.json();
+      const { password_salt, password_kdf_n } = await saltResp.json();
       const pwSalt = H.hexToBytes(password_salt);
-      const { authKey, encKey } = await H.deriveSplitKeys(password, pwSalt);
+      // Whatever cost THIS account was actually created/last-reset
+      // under — not necessarily SCRYPT_N_STRONG, for an account that
+      // predates it (see accounts_db.py's password_kdf_n).
+      const { authKey, encKey } = await H.deriveSplitKeys(password, pwSalt, password_kdf_n);
 
       const resp = await fetch(`${this.baseUrl}/api/login`, {
         method: "POST",
@@ -117,9 +132,9 @@ const HavenAuth = (() => {
       const normalized = normalizePhrase(recoveryPhrase);
       const saltResp = await fetch(`${this.baseUrl}/api/recovery-salt?username=${encodeURIComponent(username)}`);
       if (!saltResp.ok) throw new Error("No such account.");
-      const { recovery_salt } = await saltResp.json();
+      const { recovery_salt, recovery_kdf_n } = await saltResp.json();
       const recSalt = H.hexToBytes(recovery_salt);
-      const { authKey, encKey } = await H.deriveSplitKeys(normalized, recSalt);
+      const { authKey, encKey } = await H.deriveSplitKeys(normalized, recSalt, recovery_kdf_n);
 
       const verifyResp = await fetch(`${this.baseUrl}/api/forgot-password/verify`, {
         method: "POST",
@@ -134,8 +149,12 @@ const HavenAuth = (() => {
         H.utf8(username)
       );
 
+      // The NEW password always gets the current strong cost, fresh
+      // salt — a reset is exactly the moment to bring an older account
+      // fully up to date, same as accounts_server.py does for the hash
+      // format on this same call.
       const newSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: newAuthKey, encKey: newEncKey } = await H.deriveSplitKeys(newPassword, newSalt);
+      const { authKey: newAuthKey, encKey: newEncKey } = await H.deriveSplitKeys(newPassword, newSalt, SCRYPT_N_STRONG);
       const newBlob = await H.encryptAuthenticated(newEncKey, privateBytes, H.utf8(username));
 
       const resetResp = await fetch(`${this.baseUrl}/api/forgot-password/reset`, {
@@ -147,6 +166,7 @@ const HavenAuth = (() => {
           new_password_salt: H.bytesToHex(newSalt),
           new_password_auth_key: H.bytesToHex(newAuthKey),
           new_encrypted_identity_blob: H.bytesToHex(newBlob),
+          new_password_kdf_n: SCRYPT_N_STRONG,
         }),
       });
       if (!resetResp.ok) throw new Error("Password reset failed.");

@@ -236,11 +236,21 @@ class SenderKeyChain:
 # --------------------------------------------------------------------------
 
 
-def derive_key_from_password(password: str, salt: bytes, length: int = 32) -> bytes:
-    return Scrypt(salt=salt, length=length, n=2**15, r=8, p=1).derive(password.encode("utf-8"))
+# The original scrypt cost — kept as the default so every EXISTING
+# caller (local identity-file unlock in identity.py, backup.py's
+# desktop AND web backup files) keeps deriving byte-identical keys from
+# already-encrypted-with-this-N data. Never bump this default; bump the
+# `n` argument at the specific call site you actually want stronger
+# instead (see webapp/accounts_server.py's SCRYPT_N_CURRENT for why the
+# hosted web app's login/signup does exactly that).
+SCRYPT_N_LEGACY = 2**15
 
 
-def derive_split_keys(password: str, salt: bytes) -> tuple[bytes, bytes]:
+def derive_key_from_password(password: str, salt: bytes, length: int = 32, n: int = SCRYPT_N_LEGACY) -> bytes:
+    return Scrypt(salt=salt, length=length, n=n, r=8, p=1).derive(password.encode("utf-8"))
+
+
+def derive_split_keys(password: str, salt: bytes, n: int = SCRYPT_N_LEGACY) -> tuple[bytes, bytes]:
     """Zero-knowledge split for the hosted web app (webapp/): ONE expensive
     scrypt derivation, then HKDF domain-separation into two independent
     keys — an auth_key sent to the server to prove who you are, and an
@@ -250,8 +260,14 @@ def derive_split_keys(password: str, salt: bytes) -> tuple[bytes, bytes]:
     (database dump AND live code) that captures every auth_key it's ever
     seen still cannot derive enc_key from it — HKDF is one-way, and the
     two outputs are cryptographically independent. Returns (auth_key,
-    enc_key)."""
-    combined = derive_key_from_password(password, salt, length=32)
+    enc_key).
+
+    `n` defaults to the legacy cost for the same reason
+    derive_key_from_password's does; webapp/accounts_server.py passes a
+    stronger value explicitly for new/reset credentials, and reads back
+    whichever `n` an existing account was actually created with (stored
+    server-side) so a returning user's password still derives correctly."""
+    combined = derive_key_from_password(password, salt, length=32, n=n)
     auth_key = _hkdf(combined, info=b"webapp-auth-key")
     enc_key = _hkdf(combined, info=b"webapp-enc-key")
     return auth_key, enc_key
