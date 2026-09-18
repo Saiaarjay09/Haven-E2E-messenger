@@ -63,6 +63,9 @@ const HavenAuth = (() => {
           recovery_salt: H.bytesToHex(recSalt),
           recovery_auth_key: H.bytesToHex(recAuthKey),
           encrypted_identity_blob_recovery: H.bytesToHex(encryptedRec),
+          // Not a secret — see accounts_db.py's docstring. Registers
+          // this account in the people-search directory right away.
+          identity_pub: H.bytesToHex(identity.publicBytes),
         }),
       });
       if (!resp.ok) {
@@ -88,7 +91,26 @@ const HavenAuth = (() => {
       const { encrypted_identity_blob } = await resp.json();
       const privateBytes = await H.decryptAuthenticated(encKey, H.hexToBytes(encrypted_identity_blob), H.utf8(username));
       const identity = await H.keyPairFromPrivateBytes(privateBytes);
+
+      // Best-effort directory backfill for accounts that predate the
+      // identity_pub column (or whose last-announced key is somehow
+      // stale) — reuses the SAME auth_key /api/login just verified, so
+      // no extra password prompt, and never blocks login on failure.
+      fetch(`${this.baseUrl}/api/update-identity-pub`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password_auth_key: H.bytesToHex(authKey), identity_pub: H.bytesToHex(identity.publicBytes) }),
+      }).catch(() => {});
+
       return { identity, username };
+    }
+
+    async searchUsers(query, excludeUsername) {
+      const params = new URLSearchParams({ q: query, exclude: excludeUsername || "" });
+      const r = await fetch(`${this.baseUrl}/api/search-users?${params}`);
+      if (!r.ok) return [];
+      const data = await r.json();
+      return data.results || [];
     }
 
     async resetPassword(username, recoveryPhrase, newPassword) {

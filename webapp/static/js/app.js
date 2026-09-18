@@ -60,7 +60,7 @@
   }
 
   function showScreen(name) {
-    el("login-screen").hidden = name !== "login";
+    el("login-page").hidden = name !== "login";
     el("app-screen").hidden = name !== "app";
   }
 
@@ -169,9 +169,15 @@
     }
   }
 
+  // Triggered from a chat's 3-dot menu, but exports the WHOLE account
+  // (every contact, every chat's history) — there's no per-chat backup
+  // format, and building one wasn't asked for; the modal text says so
+  // explicitly since "Backup…" living on one specific chat's menu could
+  // otherwise read as scoped to just that chat.
   function openBackup() {
-    el("backup-row").hidden = false;
+    el("chat-menu-popup").classList.add("hide");
     el("backup-password").value = "";
+    el("backup-overlay").classList.remove("hide");
   }
 
   async function doBackup() {
@@ -188,7 +194,7 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      el("backup-row").hidden = true;
+      el("backup-overlay").classList.add("hide");
     } catch (e) {
       console.error("backup export failed:", e);
       appendLine("sys", "Backup failed: " + e.message);
@@ -196,6 +202,11 @@
   }
 
   async function onLoggedIn(identity, username) {
+    // The auto-login-from-saved-session path (see loadSession below)
+    // skips doLogin entirely, so it never gets an accountsClient the
+    // normal login flow would have set — people-search needs one
+    // regardless of which path got us here.
+    if (!state.accountsClient) state.accountsClient = new HavenAuth.AccountsClient(defaultAccountsUrl());
     state.identity = identity;
     state.username = username;
     state.store = await HavenStorage.Store.open(username, identity.privateBytes);
@@ -1564,6 +1575,68 @@
     refreshPeerList();
   }
 
+  // Adds a person found via search as a contact (skipping that if
+  // they're already one — clicking a repeated search result should
+  // just open the existing chat, not create a duplicate upsert) and
+  // jumps straight into the chat, since "search for people to DM" means
+  // the click itself should get you to messaging them, not just add them.
+  async function addContactFromSearch(username, identityPubHex) {
+    const identityPub = H.hexToBytes(identityPubHex);
+    const fp = await H.fingerprint(state.identity.publicBytes, identityPub);
+    if (!state.peers.has(fp)) {
+      await state.store.upsertContact(fp, username, identityPubHex);
+      state.peers.set(fp, { username, identityPubHex });
+      refreshPeerList();
+    }
+    el("user-search-input").value = "";
+    el("user-search-results").classList.add("hide");
+    switchSidebarTab("chats");
+    await openChat(fp);
+  }
+
+  let userSearchDebounce = null;
+  function onUserSearchInput() {
+    clearTimeout(userSearchDebounce);
+    const query = el("user-search-input").value.trim();
+    if (!query) {
+      el("user-search-results").classList.add("hide");
+      return;
+    }
+    userSearchDebounce = setTimeout(() => doUserSearch(query), 300);
+  }
+
+  async function doUserSearch(query) {
+    let matches;
+    try {
+      matches = await state.accountsClient.searchUsers(query, state.username);
+    } catch (e) {
+      console.error("user search failed:", e);
+      matches = [];
+    }
+    // The box may have changed (or been cleared) while this request was
+    // in flight — a stale response landing after that would otherwise
+    // show results for a query that's no longer in the box.
+    if (el("user-search-input").value.trim() !== query) return;
+    const results = el("user-search-results");
+    results.innerHTML = "";
+    if (!matches.length) {
+      const note = document.createElement("div");
+      note.className = "user-search-note";
+      note.textContent = "No one found.";
+      results.appendChild(note);
+    } else {
+      for (const m of matches) {
+        const item = document.createElement("div");
+        item.className = "user-search-item";
+        item.appendChild(avatarElement(m.username, null));
+        item.appendChild(document.createTextNode(m.username));
+        item.onclick = () => addContactFromSearch(m.username, m.identity_pub);
+        results.appendChild(item);
+      }
+    }
+    results.classList.remove("hide");
+  }
+
   function toggleMyCard() {
     const row = el("my-card-row");
     if (row.hidden) {
@@ -1619,8 +1692,7 @@
       if (e.key === "Enter") confirmAddContact();
     });
     el("my-card-btn").onclick = toggleMyCard;
-    el("backup-btn").onclick = openBackup;
-    el("backup-cancel").onclick = () => (el("backup-row").hidden = true);
+    el("backup-cancel").onclick = () => el("backup-overlay").classList.add("hide");
     el("backup-confirm").onclick = doBackup;
     el("new-group-btn").onclick = openNewGroup;
     el("new-group-cancel").onclick = () => (el("new-group-row").hidden = true);
@@ -1671,11 +1743,18 @@
       closeAllMsgMenus();
       popup.classList.toggle("hide", !wasHidden);
     };
+    el("chat-backup-btn").onclick = openBackup;
     el("chat-clear-btn").onclick = doClearChat;
     el("chat-delete-btn").onclick = doDeleteChat;
-    document.addEventListener("click", () => {
+    document.addEventListener("click", (e) => {
       closeAllMsgMenus();
       el("chat-menu-popup").classList.add("hide");
+      if (!el("user-search-row").contains(e.target)) el("user-search-results").classList.add("hide");
+    });
+
+    el("user-search-input").addEventListener("input", onUserSearchInput);
+    el("user-search-input").addEventListener("focus", () => {
+      if (el("user-search-input").value.trim()) el("user-search-results").classList.remove("hide");
     });
 
     el("reply-preview-cancel").onclick = clearReplyTarget;

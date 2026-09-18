@@ -195,6 +195,15 @@
   }
 
   /* -- sidebar tabs (Chats / Settings) -------------------------------- */
+  /* -- people search (below the account header) ------------------------ */
+  #user-search-row { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  #user-search-input { width: 100%; }
+  #user-search-results { position: absolute; left: 12px; right: 12px; top: 100%; margin-top: 4px; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 10; max-height: 260px; overflow-y: auto; }
+  #user-search-results.hide { display: none; }
+  .user-search-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; font-size: 14px; color: var(--text); }
+  .user-search-item:hover { background: var(--bg-elevated); }
+  .user-search-note { padding: 9px 10px; font-size: 13px; color: var(--text-tertiary); }
+
   #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
   .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-radius: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
   .sidebar-tab:hover { background: var(--bg-elevated-2); }
@@ -259,12 +268,23 @@
         which is exactly how this app is meant to be used) ------------- */
   .modal-box p { margin: 0 0 16px; font-size: 14px; color: var(--text); line-height: 1.4; white-space: pre-line; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* -- login masthead: a wordmark above the card, not a plain <h1>
+        inside it, the way Instagram/most consumer apps treat their
+        logotype on a sign-in screen. --------------------------------- */
+  #login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
+  #masthead { font-family: Georgia, "Times New Roman", Times, serif; font-style: italic; font-weight: 500; font-size: 56px; letter-spacing: 0.01em; color: var(--text); margin-bottom: 28px; user-select: none; }
+  #login-screen { margin: 0; }
+  @media (max-width: 480px) {
+    #masthead { font-size: 44px; margin-bottom: 20px; }
+  }
 </style>
 </head>
 <body>
 
+<div id="login-page">
+<div id="masthead">Haven</div>
 <div id="login-screen">
-  <h1>Haven</h1>
   <p class="field-hint">A hosted, end-to-end encrypted chat client. Everything is
   encrypted on this device — the server never sees your password or your messages.</p>
   <label>Username</label>
@@ -311,6 +331,7 @@
     </div>
   </div>
 </div>
+</div>
 
 <div id="app-screen" hidden>
   <div id="sidebar">
@@ -320,20 +341,22 @@
       <a href="#" id="logout-link">Log out</a>
       <div id="relay-status">Relay: connecting…</div>
     </div>
+    <div id="user-search-row">
+      <input id="user-search-input" placeholder="Search people…" autocomplete="off">
+      <div id="user-search-results" class="hide"></div>
+    </div>
     <div id="sidebar-tabs">
       <button id="tab-chats-btn" class="sidebar-tab active" type="button">Chats</button>
       <button id="tab-settings-btn" class="sidebar-tab" type="button">Settings</button>
     </div>
     <ul id="peer-list"></ul>
     <div id="sidebar-footer">
-      <input id="avatar-file" type="file" accept="image/*" hidden>
-      <button id="set-avatar-btn">Set avatar…</button>
-      <div id="backup-row" hidden>
-        <input id="backup-password" type="password" placeholder="Choose a backup password" class="full-width">
-        <button id="backup-confirm" class="primary">Download backup</button>
-        <button id="backup-cancel">Cancel</button>
+      <div id="add-contact-row" hidden>
+        <input id="add-contact-input" placeholder="Paste contact card…" class="full-width">
+        <button id="add-contact-confirm" class="primary">Add</button>
+        <button id="add-contact-cancel">Cancel</button>
       </div>
-      <button id="backup-btn">Backup…</button>
+      <button id="add-contact-btn">Add contact…</button>
       <div id="new-group-row" hidden>
         <input id="new-group-name" placeholder="Group name" class="full-width">
         <div id="new-group-members" class="option-list"></div>
@@ -344,13 +367,9 @@
     </div>
     <div id="settings-panel" hidden>
       <div class="settings-section">
-        <h3>Add a contact</h3>
-        <div id="add-contact-row" hidden>
-          <input id="add-contact-input" placeholder="Paste contact card…" class="full-width">
-          <button id="add-contact-confirm" class="primary">Add</button>
-          <button id="add-contact-cancel">Cancel</button>
-        </div>
-        <button id="add-contact-btn">Add contact…</button>
+        <h3>Avatar</h3>
+        <input id="avatar-file" type="file" accept="image/*" hidden>
+        <button id="set-avatar-btn">Set avatar…</button>
       </div>
       <div class="settings-section">
         <h3>My contact card</h3>
@@ -382,6 +401,7 @@
         <div id="chat-menu-wrap" hidden>
           <button id="chat-menu-btn" type="button" title="Chat options">⋮</button>
           <div id="chat-menu-popup" class="msg-menu-popup hide">
+            <button id="chat-backup-btn" type="button">Backup…</button>
             <button id="chat-clear-btn" type="button">Clear chat</button>
             <button id="chat-delete-btn" type="button">Delete chat</button>
           </div>
@@ -484,24 +504,39 @@
   </div>
 </div>
 
+<!-- Triggered from a chat's 3-dot menu — backs up the whole account
+     (all contacts and message history), not just the open chat; see
+     app.js's openBackup for why a per-chat export isn't what this does. -->
+<div id="backup-overlay" class="modal-overlay hide">
+  <div class="modal-box">
+    <p><b>Download a backup</b><br>This saves your entire account — every contact and message,
+    not just this chat — as an encrypted file you can restore from later.</p>
+    <input id="backup-password" type="password" placeholder="Choose a backup password" class="full-width">
+    <div class="modal-actions">
+      <button id="backup-cancel">Cancel</button>
+      <button id="backup-confirm" class="primary">Download</button>
+    </div>
+  </div>
+</div>
+
 <!-- The ?v= query string forces browsers to re-fetch these files instead
      of silently reusing a stale cached copy across deploys — bump it any
      time js/*.js changes. Without this, a browser that already loaded an
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=23"></script>
-<script src="js/storage.js?v=23"></script>
-<script src="js/network.js?v=23"></script>
-<script src="js/auth.js?v=23"></script>
-<script src="js/backup.js?v=23"></script>
-<script src="js/attachments.js?v=23"></script>
-<script src="js/groups.js?v=23"></script>
-<script src="js/calls.js?v=23"></script>
-<script src="js/groupcalls.js?v=23"></script>
-<script src="js/avatars.js?v=23"></script>
-<script src="js/giphy.js?v=23"></script>
-<script src="js/translation.js?v=23"></script>
-<script src="js/app.js?v=23"></script>
+<script src="js/crypto.js?v=24"></script>
+<script src="js/storage.js?v=24"></script>
+<script src="js/network.js?v=24"></script>
+<script src="js/auth.js?v=24"></script>
+<script src="js/backup.js?v=24"></script>
+<script src="js/attachments.js?v=24"></script>
+<script src="js/groups.js?v=24"></script>
+<script src="js/calls.js?v=24"></script>
+<script src="js/groupcalls.js?v=24"></script>
+<script src="js/avatars.js?v=24"></script>
+<script src="js/giphy.js?v=24"></script>
+<script src="js/translation.js?v=24"></script>
+<script src="js/app.js?v=24"></script>
 </body>
 </html>

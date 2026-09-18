@@ -57,6 +57,12 @@ class SignupRequest(BaseModel):
     recovery_salt: str
     recovery_auth_key: str
     encrypted_identity_blob_recovery: str
+    # Optional (defaults to "") only so an older client or a test that
+    # constructs this payload directly doesn't break — see auth.js,
+    # which always sends the real value. A "" identity_pub just means
+    # this account won't show up in people-search until it next logs in
+    # (see /api/update-identity-pub's backfill).
+    identity_pub: str = ""
 
     _validate = field_validator("username")(_validate_username)
 
@@ -64,6 +70,12 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password_auth_key: str
+
+
+class UpdateIdentityPubRequest(BaseModel):
+    username: str
+    password_auth_key: str
+    identity_pub: str
 
 
 class RecoveryVerifyRequest(BaseModel):
@@ -104,6 +116,7 @@ class SimpleRateLimiter:
 db = AccountsDB(os.environ.get("HAVEN_ACCOUNTS_DB", "haven_accounts.db"))
 login_limiter = SimpleRateLimiter(max_attempts=10, window_seconds=60.0)
 signup_limiter = SimpleRateLimiter(max_attempts=5, window_seconds=60.0)
+search_limiter = SimpleRateLimiter(max_attempts=30, window_seconds=60.0)
 
 # Deliberately never accepted from a request — an OpenAI key is tied to
 # real billing, unlike this file's other secrets (auth_key/enc_key,
@@ -155,6 +168,7 @@ def signup(req: SignupRequest, request_ip: str = "unknown"):
             recovery_salt=req.recovery_salt,
             recovery_auth_hash=recovery_auth_hash,
             encrypted_identity_blob_recovery=req.encrypted_identity_blob_recovery,
+            identity_pub=req.identity_pub,
         )
     except UsernameTaken as exc:
         raise HTTPException(status_code=409, detail="That username is already taken.") from exc
@@ -189,6 +203,39 @@ def login(req: LoginRequest):
     if not row or not ok:
         raise HTTPException(status_code=401, detail="Wrong username or password.")
     return {"password_salt": row["password_salt"], "encrypted_identity_blob": row["encrypted_identity_blob"]}
+
+
+@app.post("/api/update-identity-pub")
+def update_identity_pub(req: UpdateIdentityPubRequest):
+    """Backfills the directory entry search_users reads from. Reuses the
+    SAME password_auth_key proof /api/login just verified (the browser
+    calls this right after a successful login, with no extra password
+    prompt) rather than trusting identity_pub unauthenticated — an
+    unauthenticated version of this endpoint would let anyone overwrite
+    someone else's directory entry with an attacker-controlled key,
+    silently hijacking who a contact search actually connects you to."""
+    login_limiter.check(req.username.lower())
+    row = db.get_by_username(req.username)
+    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH.decode()
+    ok = bcrypt.checkpw(req.password_auth_key.encode(), stored_hash.encode())
+    if not row or not ok:
+        raise HTTPException(status_code=401, detail="Wrong username or password.")
+    db.set_identity_pub(req.username, req.identity_pub)
+    return {"status": "ok"}
+
+
+@app.get("/api/search-users")
+def search_users(q: str, exclude: str = ""):
+    """Powers the sidebar's people-search: matches by substring against
+    usernames (not case-sensitive), returning only accounts that have
+    announced an identity_pub (see update_identity_pub) since a result
+    with no key would be a dead end for actually starting a chat."""
+    search_limiter.check(exclude.lower() or "anonymous")
+    q = q.strip()
+    if not q:
+        return {"results": []}
+    rows = db.search_usernames(q, exclude_username=exclude, limit=15)
+    return {"results": [{"username": r["username"], "identity_pub": r["identity_pub"]} for r in rows]}
 
 
 @app.post("/api/forgot-password/verify")

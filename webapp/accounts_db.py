@@ -20,6 +20,12 @@ What's stored per account, and why each field is safe to store server-side:
   * recovery_salt / recovery_auth_hash / encrypted_identity_blob_recovery
     — the same pattern, keyed by a recovery phrase instead of a password,
     for the "forgot password" flow.
+  * identity_pub — the account's public identity key, in the clear. This
+    is NOT a secret: it's exactly what a contact card already hands to
+    anyone (haven1:username:pubkeyhex), so storing it here to power the
+    people-search feature (see search_usernames) doesn't give the server
+    any capability it didn't already have — it still never sees a
+    private key, a password, or plaintext messages.
 """
 
 from __future__ import annotations
@@ -64,6 +70,22 @@ class AccountsDB:
             """
         )
         self.conn.commit()
+        self._migrate_identity_pub_column()
+
+    # identity_pub is NOT a secret — it's exactly what a contact card
+    # already hands to anyone (haven1:username:pubkeyhex), so storing it
+    # server-side for the people-search feature doesn't weaken the
+    # zero-knowledge design described in this file's docstring: it never
+    # gives the server anything it couldn't already learn from a user
+    # simply sharing their card. Added via migration (rather than in the
+    # CREATE TABLE above) since existing deployments already have an
+    # `accounts` table without this column; SQLite has no
+    # "ADD COLUMN IF NOT EXISTS", so this checks first.
+    def _migrate_identity_pub_column(self) -> None:
+        cols = {row[1] for row in self.conn.execute("PRAGMA table_info(accounts)").fetchall()}
+        if "identity_pub" not in cols:
+            self.conn.execute("ALTER TABLE accounts ADD COLUMN identity_pub TEXT")
+            self.conn.commit()
 
     def is_username_available(self, username: str) -> bool:
         with self._lock:
@@ -81,6 +103,7 @@ class AccountsDB:
         recovery_salt: str,
         recovery_auth_hash: str,
         encrypted_identity_blob_recovery: str,
+        identity_pub: str = "",
     ) -> str:
         user_id = str(uuid.uuid4())
         now = time.time()
@@ -91,8 +114,8 @@ class AccountsDB:
                     INSERT INTO accounts (
                         user_id, username, username_lower, password_salt, password_auth_hash,
                         encrypted_identity_blob, recovery_salt, recovery_auth_hash,
-                        encrypted_identity_blob_recovery, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        encrypted_identity_blob_recovery, identity_pub, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -104,6 +127,7 @@ class AccountsDB:
                         recovery_salt,
                         recovery_auth_hash,
                         encrypted_identity_blob_recovery,
+                        identity_pub,
                         now,
                         now,
                     ),
@@ -118,6 +142,33 @@ class AccountsDB:
             return self.conn.execute(
                 "SELECT * FROM accounts WHERE username_lower = ?", (username.lower(),)
             ).fetchone()
+
+    # Called on every login (see accounts_server.py's /api/update-identity-pub,
+    # invoked with the same password_auth_key login already verified) — a
+    # cheap, idempotent self-healing backfill for accounts created before
+    # this column existed, since signup is otherwise the only place this
+    # gets set.
+    def set_identity_pub(self, username: str, identity_pub: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                "UPDATE accounts SET identity_pub = ? WHERE username_lower = ?",
+                (identity_pub, username.lower()),
+            )
+            self.conn.commit()
+
+    def search_usernames(self, query: str, exclude_username: str = "", limit: int = 15) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                """
+                SELECT username, identity_pub FROM accounts
+                WHERE username_lower LIKE ?
+                  AND username_lower != ?
+                  AND identity_pub IS NOT NULL AND identity_pub != ''
+                ORDER BY username_lower
+                LIMIT ?
+                """,
+                (f"%{query.lower()}%", exclude_username.lower(), limit),
+            ).fetchall()
 
     def update_password(
         self, username: str, password_salt: str, password_auth_hash: str, encrypted_identity_blob: str
