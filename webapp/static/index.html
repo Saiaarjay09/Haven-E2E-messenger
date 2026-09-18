@@ -132,6 +132,14 @@
   #peer-list li.selected { background: var(--bg-elevated-2); border-left-color: var(--accent); }
   #sidebar-footer { padding: 10px; border-top: 1px solid var(--border); }
   #sidebar-footer button { display: block; width: 100%; margin-bottom: 6px; }
+  /* De-emphasized "last resort" action — searching by username (above)
+     is the primary path now, so this reads as a quiet text link rather
+     than a button of equal weight. */
+  #sidebar-footer button.btn-link {
+    background: none; border: none; width: auto; padding: 4px 2px; margin: 2px 0 0;
+    color: var(--text-tertiary); font-size: 12px; text-decoration: underline;
+  }
+  #sidebar-footer button.btn-link:hover { color: var(--text-secondary); }
 
   #chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
   #chat-header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
@@ -229,12 +237,23 @@
   #user-search-results.hide { display: none; }
   .user-search-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; font-size: 14px; color: var(--text); }
   .user-search-item:hover { background: var(--bg-elevated); }
+  .user-search-item .user-search-name { flex: 1; }
+  .user-search-item .user-search-action { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.03em; }
   .user-search-note { padding: 9px 10px; font-size: 13px; color: var(--text-tertiary); }
 
   #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
   .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-radius: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
   .sidebar-tab:hover { background: var(--bg-elevated-2); }
   .sidebar-tab.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+  .tab-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
+
+  /* -- pending contacts (Chats list) and incoming requests (Requests tab) -- */
+  #peer-list li.peer-pending { cursor: default; color: var(--text-tertiary); font-style: italic; }
+  #peer-list li.peer-pending:hover { background: none; }
+  #requests-list { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
+  .request-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; }
+  .request-row .request-name { flex: 1; font-size: 14px; color: var(--text); }
+  .request-row button { width: auto; padding: 5px 10px; font-size: 12px; }
   #settings-panel { flex: 1; overflow-y: auto; padding: 14px; }
   .settings-section { margin-bottom: 22px; }
   .settings-section h3 { margin: 0 0 10px; font-size: 12px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
@@ -383,16 +402,21 @@
     </div>
     <div id="sidebar-tabs">
       <button id="tab-chats-btn" class="sidebar-tab active" type="button">Chats</button>
+      <button id="tab-requests-btn" class="sidebar-tab" type="button">Requests <span id="requests-badge" class="tab-badge" hidden>0</span></button>
       <button id="tab-settings-btn" class="sidebar-tab" type="button">Settings</button>
     </div>
     <ul id="peer-list"></ul>
+    <ul id="requests-list" hidden></ul>
     <div id="sidebar-footer">
       <div id="add-contact-row" hidden>
         <input id="add-contact-input" placeholder="Paste contact card…" class="full-width">
-        <button id="add-contact-confirm" class="primary">Add</button>
+        <button id="add-contact-confirm" class="primary">Send request</button>
         <button id="add-contact-cancel">Cancel</button>
       </div>
-      <button id="add-contact-btn">Add contact…</button>
+      <!-- Last resort: everyone should be reachable via the search box
+           above by now, so this stays a small text-style link rather
+           than a full button competing with it (see .btn-link below). -->
+      <button id="add-contact-btn" class="btn-link">Add by contact card…</button>
       <div id="new-group-row" hidden>
         <input id="new-group-name" placeholder="Group name" class="full-width">
         <div id="new-group-members" class="option-list"></div>
@@ -561,19 +585,19 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=30"></script>
-<script src="js/scrypt-worker-client.js?v=30"></script>
-<script src="js/storage.js?v=30"></script>
-<script src="js/network.js?v=30"></script>
-<script src="js/auth.js?v=30"></script>
-<script src="js/backup.js?v=30"></script>
-<script src="js/attachments.js?v=30"></script>
-<script src="js/groups.js?v=30"></script>
-<script src="js/calls.js?v=30"></script>
-<script src="js/groupcalls.js?v=30"></script>
-<script src="js/avatars.js?v=30"></script>
-<script src="js/giphy.js?v=30"></script>
-<script src="js/translation.js?v=30"></script>
-<script src="js/app.js?v=30"></script>
+<script src="js/crypto.js?v=31"></script>
+<script src="js/scrypt-worker-client.js?v=31"></script>
+<script src="js/storage.js?v=31"></script>
+<script src="js/network.js?v=31"></script>
+<script src="js/auth.js?v=31"></script>
+<script src="js/backup.js?v=31"></script>
+<script src="js/attachments.js?v=31"></script>
+<script src="js/groups.js?v=31"></script>
+<script src="js/calls.js?v=31"></script>
+<script src="js/groupcalls.js?v=31"></script>
+<script src="js/avatars.js?v=31"></script>
+<script src="js/giphy.js?v=31"></script>
+<script src="js/translation.js?v=31"></script>
+<script src="js/app.js?v=31"></script>
 </body>
 </html>

@@ -96,10 +96,12 @@ const HavenNetwork = (() => {
       this.relay = null;
       this.connections = new Map(); // fingerprint -> {identityPubHex, username, session}
       this._pendingEphemeral = new Map(); // identityPubHex -> ephemeral keypair
+      this._pendingIncomingHello = new Map(); // fingerprint -> {theirIdentityPub, theirEphemeralPub, username} — awaiting acceptContactRequest/declineContactRequest
 
       this.onMessage = null; // (fingerprint, kind, text, senderPubHex, id) => void — id is the local storage row id, or undefined for a NON_MESSAGE_KINDS control frame
       this.onStatus = null; // (fingerprint, status) => void
       this.onConnect = null; // (conn) => void
+      this.onContactRequest = null; // (fingerprint, username, identityPubHex) => void — a hello arrived from someone who isn't yet an accepted (or pending-out) contact
     }
 
     attachRelay(relayClient) {
@@ -176,9 +178,28 @@ const HavenNetwork = (() => {
 
     async _handleHello(theirIdentityPub, hello) {
       const theirEphemeralPub = H.hexToBytes(hello.ephemeral_pub);
+      const fp = await H.fingerprint(this.identity.publicBytes, theirIdentityPub);
+
+      // A hello only completes the handshake automatically when we
+      // already trust this identity: either they're already a mutual
+      // contact (an ordinary reconnect — e.g. after a page reload or a
+      // relay drop, which re-sends hello the next time we open their
+      // chat), or WE already sent THEM a request ("pending_out") and this
+      // is their acceptance arriving as a hello of their own. Anyone
+      // else's hello is a contact request that needs an explicit accept
+      // — see acceptContactRequest/declineContactRequest below — so it's
+      // parked here instead of silently establishing a session.
+      const existing = await this.store.getContact(fp);
+      const autoAccept = existing && (existing.status === "accepted" || existing.status === "pending_out" || existing.status === undefined);
+      if (!autoAccept) {
+        this._pendingIncomingHello.set(fp, { theirIdentityPub, theirEphemeralPub, username: hello.username });
+        await this.store.upsertContact(fp, hello.username, H.bytesToHex(theirIdentityPub), undefined, "pending_in");
+        if (this.onContactRequest) this.onContactRequest(fp, hello.username, H.bytesToHex(theirIdentityPub));
+        return;
+      }
+
       const myEphemeral = await H.generateKeyPair();
       const session = await this._deriveSession(false, myEphemeral, theirIdentityPub, theirEphemeralPub);
-      const fp = await H.fingerprint(this.identity.publicBytes, theirIdentityPub);
       const conn = { fingerprint: fp, username: hello.username, identityPub: theirIdentityPub, session };
       await this._registerConnection(conn);
       this.relay.sendTo(H.bytesToHex(theirIdentityPub), {
@@ -187,6 +208,41 @@ const HavenNetwork = (() => {
         identity_pub: H.bytesToHex(this.identity.publicBytes),
         ephemeral_pub: H.bytesToHex(myEphemeral.publicBytes),
       });
+    }
+
+    // Completes a contact request we chose to accept (see app.js's
+    // Requests tab). Prefers finishing the handshake immediately from the
+    // hello we already have in memory; if that's gone (e.g. the page was
+    // reloaded before we clicked Accept), falls back to sending our own
+    // hello — the requester already has us as "pending_out", so their
+    // _handleHello auto-completes on receipt, same as a mutual request.
+    async acceptContactRequest(fingerprint) {
+      const pending = this._pendingIncomingHello.get(fingerprint);
+      if (pending) {
+        this._pendingIncomingHello.delete(fingerprint);
+        const myEphemeral = await H.generateKeyPair();
+        const session = await this._deriveSession(false, myEphemeral, pending.theirIdentityPub, pending.theirEphemeralPub);
+        const conn = { fingerprint, username: pending.username, identityPub: pending.theirIdentityPub, session };
+        await this._registerConnection(conn);
+        this.relay.sendTo(H.bytesToHex(pending.theirIdentityPub), {
+          type: "hello_ack",
+          username: this.username,
+          identity_pub: H.bytesToHex(this.identity.publicBytes),
+          ephemeral_pub: H.bytesToHex(myEphemeral.publicBytes),
+        });
+        return;
+      }
+      const contact = await this.store.getContact(fingerprint);
+      if (!contact) throw new Error("unknown contact request");
+      await this.connectRelay(H.hexToBytes(contact.identityPubHex), contact.username);
+    }
+
+    // Discards an incoming contact request without replying — the
+    // requester just never hears back, the same way an unanswered
+    // message request works elsewhere.
+    async declineContactRequest(fingerprint) {
+      this._pendingIncomingHello.delete(fingerprint);
+      await this.store.deleteContact(fingerprint);
     }
 
     async _handleHelloAck(theirIdentityPub, ack) {
@@ -203,7 +259,11 @@ const HavenNetwork = (() => {
 
     async _registerConnection(conn) {
       this.connections.set(conn.fingerprint, conn);
-      await this.store.upsertContact(conn.fingerprint, conn.username, H.bytesToHex(conn.identityPub));
+      // A live session only ever gets registered here once the other side
+      // is known-trusted (see _handleHello/_handleHelloAck/
+      // acceptContactRequest above) — so reaching this point always means
+      // the contact is (now) mutually accepted, whatever its prior status.
+      await this.store.upsertContact(conn.fingerprint, conn.username, H.bytesToHex(conn.identityPub), undefined, "accepted");
       if (this.onConnect) this.onConnect(conn);
       if (this.onStatus) this.onStatus(conn.fingerprint, "connected");
     }

@@ -71,13 +71,21 @@ const HavenStorage = (() => {
     // (re)connection (see network.js's _registerConnection), and a
     // literal `= false` default here would silently wipe out a
     // contact's safety-number verification on every reconnect.
-    async upsertContact(fingerprint, username, identityPubHex, verified) {
+    //
+    // `status` is the invite/accept lifecycle: "pending_out" (we asked,
+    // waiting on them), "pending_in" (they asked, waiting on us) or
+    // "accepted" (mutual — can message freely). Same preserve-by-default
+    // rule as verified; a record predating this field (or any record
+    // whose status was never explicitly set to pending) is treated as
+    // "accepted" so existing contacts keep working unchanged.
+    async upsertContact(fingerprint, username, identityPubHex, verified, status) {
       const existing = await this.getContact(fingerprint);
       const record = {
         fingerprint,
         username,
         identityPubHex,
         verified: verified !== undefined ? verified : existing ? existing.verified : false,
+        status: status !== undefined ? status : existing ? existing.status || "accepted" : "accepted",
         avatarDataUrl: existing ? existing.avatarDataUrl : undefined,
         addedAt: existing ? existing.addedAt : Date.now(),
       };

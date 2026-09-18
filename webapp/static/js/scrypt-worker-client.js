@@ -16,7 +16,7 @@ const HavenScryptWorker = (() => {
 
   function getWorker() {
     if (worker) return worker;
-    worker = new Worker("js/scrypt-worker.js?v=30");
+    worker = new Worker("js/scrypt-worker.js?v=31");
     worker.onmessage = (e) => {
       const { id, error, ...result } = e.data;
       const p = pending.get(id);

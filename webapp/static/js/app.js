@@ -17,7 +17,7 @@
     relay: null,
     groupManager: null,
     callManager: null,
-    peers: new Map(), // fingerprint -> {username, identityPubHex}
+    peers: new Map(), // fingerprint -> {username, identityPubHex, avatarDataUrl, status: "accepted"|"pending_out"|"pending_in"}
     peerPresence: new Map(), // fingerprint -> "online" | "hidden" — see settings' online-status toggle
     openFingerprint: null,
     openGroupId: null,
@@ -372,13 +372,29 @@
         username: conn.username,
         identityPubHex: H.bytesToHex(conn.identityPub),
         avatarDataUrl: existing ? existing.avatarDataUrl : undefined,
+        status: "accepted",
       });
       refreshPeerList();
+      renderRequests();
       if (fp === state.openFingerprint) renderChatHeaderAvatar(fp);
       sendMyAvatarTo(fp).catch((e) => console.error("send avatar failed:", e));
       sendPresenceTo(fp).catch((e) => console.error("send presence failed:", e));
     };
     state.net.onStatus = () => refreshPeerList();
+    // Someone we don't yet trust said hello — park them as a pending
+    // request (see network.js's _handleHello) instead of opening a
+    // session, and surface them in the Requests tab for an explicit
+    // accept/decline.
+    state.net.onContactRequest = (fp, username, identityPubHex) => {
+      const existing = state.peers.get(fp);
+      state.peers.set(fp, {
+        username,
+        identityPubHex,
+        avatarDataUrl: existing ? existing.avatarDataUrl : undefined,
+        status: "pending_in",
+      });
+      renderRequests();
+    };
 
     const relayWsUrl = defaultRelayWsUrl();
     state.relay = new HavenNetwork.RelayClient(identity, username, relayWsUrl);
@@ -389,9 +405,15 @@
     state.relay.start();
 
     for (const c of await state.store.listContacts()) {
-      state.peers.set(c.fingerprint, { username: c.username, identityPubHex: c.identityPubHex, avatarDataUrl: c.avatarDataUrl });
+      state.peers.set(c.fingerprint, {
+        username: c.username,
+        identityPubHex: c.identityPubHex,
+        avatarDataUrl: c.avatarDataUrl,
+        status: c.status || "accepted",
+      });
     }
     refreshPeerList();
+    renderRequests();
     showScreen("app");
     el("my-username").textContent = state.username;
     saveSession(username, identity.privateBytes);
@@ -466,18 +488,28 @@
     const list = el("peer-list");
     list.innerHTML = "";
     for (const [fp, meta] of state.peers.entries()) {
+      // Requests awaiting OUR decision live in the Requests tab, not
+      // here — an incoming request isn't a chat until it's accepted.
+      if (meta.status === "pending_in") continue;
       const li = document.createElement("li");
-      // A contact can be technically connected but have told us (via a
-      // "presence" frame) they'd rather appear offline — see the
-      // Settings tab's "Share online status" toggle, the local half of
-      // this same mechanism.
-      const presence = state.peerPresence.get(fp) || "online";
-      const online = state.net.isConnected(fp) && presence !== "hidden";
       li.appendChild(avatarElement(meta.username, meta.avatarDataUrl));
-      li.appendChild(document.createTextNode(`${meta.username} (${online ? "online" : "offline"})`));
+      if (meta.status === "pending_out") {
+        // We sent this request and are waiting on them — nothing to
+        // open yet, so this row is a status line, not a clickable chat.
+        li.appendChild(document.createTextNode(`${meta.username} (request sent)`));
+        li.className = "peer-pending";
+      } else {
+        // A contact can be technically connected but have told us (via
+        // a "presence" frame) they'd rather appear offline — see the
+        // Settings tab's "Share online status" toggle, the local half
+        // of this same mechanism.
+        const presence = state.peerPresence.get(fp) || "online";
+        const online = state.net.isConnected(fp) && presence !== "hidden";
+        li.appendChild(document.createTextNode(`${meta.username} (${online ? "online" : "offline"})`));
+        li.className = fp === state.openFingerprint ? "selected" : "";
+        li.onclick = () => openChat(fp);
+      }
       li.dataset.fp = fp;
-      li.className = fp === state.openFingerprint ? "selected" : "";
-      li.onclick = () => openChat(fp);
       list.appendChild(li);
     }
     if (state.groupManager) {
@@ -589,6 +621,7 @@
     const list = el("new-group-members");
     list.innerHTML = "";
     for (const meta of state.peers.values()) {
+      if (meta.status && meta.status !== "accepted") continue; // can't message a pending contact yet, so can't group them
       const label = document.createElement("label");
       label.style.display = "block";
       const cb = document.createElement("input");
@@ -623,6 +656,7 @@
     list.innerHTML = "";
     for (const meta of state.peers.values()) {
       if (g.members.has(meta.identityPubHex)) continue;
+      if (meta.status && meta.status !== "accepted") continue;
       const label = document.createElement("label");
       label.style.display = "block";
       const cb = document.createElement("input");
@@ -1122,12 +1156,70 @@
   }
 
   function switchSidebarTab(name) {
-    const chats = name === "chats";
-    el("tab-chats-btn").classList.toggle("active", chats);
-    el("tab-settings-btn").classList.toggle("active", !chats);
-    el("peer-list").hidden = !chats;
-    el("sidebar-footer").hidden = !chats;
-    el("settings-panel").hidden = chats;
+    el("tab-chats-btn").classList.toggle("active", name === "chats");
+    el("tab-requests-btn").classList.toggle("active", name === "requests");
+    el("tab-settings-btn").classList.toggle("active", name === "settings");
+    el("peer-list").hidden = name !== "chats";
+    el("sidebar-footer").hidden = name !== "chats";
+    el("requests-list").hidden = name !== "requests";
+    el("settings-panel").hidden = name !== "settings";
+  }
+
+  // The Requests tab: incoming contact requests (see network.js's
+  // onContactRequest) that need an explicit accept or decline before any
+  // messaging can happen. Badges the tab with a count so a new request
+  // doesn't go unnoticed while sitting on the Chats tab.
+  function renderRequests() {
+    const list = el("requests-list");
+    const pending = Array.from(state.peers.entries()).filter(([, meta]) => meta.status === "pending_in");
+    const badge = el("requests-badge");
+    badge.textContent = String(pending.length);
+    badge.hidden = pending.length === 0;
+    list.innerHTML = "";
+    if (!pending.length) {
+      const note = document.createElement("div");
+      note.className = "user-search-note";
+      note.textContent = "No pending requests.";
+      list.appendChild(note);
+      return;
+    }
+    for (const [fp, meta] of pending) {
+      const row = document.createElement("li");
+      row.className = "request-row";
+      row.appendChild(avatarElement(meta.username, meta.avatarDataUrl));
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "request-name";
+      nameSpan.textContent = meta.username;
+      row.appendChild(nameSpan);
+      const acceptBtn = document.createElement("button");
+      acceptBtn.className = "primary";
+      acceptBtn.textContent = "Accept";
+      acceptBtn.onclick = () => doAcceptContactRequest(fp);
+      row.appendChild(acceptBtn);
+      const declineBtn = document.createElement("button");
+      declineBtn.textContent = "Decline";
+      declineBtn.onclick = () => doDeclineContactRequest(fp);
+      row.appendChild(declineBtn);
+      list.appendChild(row);
+    }
+  }
+
+  async function doAcceptContactRequest(fingerprint) {
+    try {
+      await state.net.acceptContactRequest(fingerprint);
+    } catch (e) {
+      console.error("accept contact request failed:", e);
+      showAlert("Could not accept: " + e.message);
+      return;
+    }
+    refreshPeerList();
+    renderRequests();
+  }
+
+  async function doDeclineContactRequest(fingerprint) {
+    await state.net.declineContactRequest(fingerprint);
+    state.peers.delete(fingerprint);
+    renderRequests();
   }
 
   function closeOpenChatView() {
@@ -1587,35 +1679,44 @@
     if (!card) return;
     const parts = card.split(":");
     if (parts[0] !== "haven1" || parts.length < 3) {
-      appendLine("sys", "Invalid contact card.");
+      showAlert("Invalid contact card.");
       return;
     }
-    const username = parts[1];
-    const identityPubHex = parts[2];
-    const identityPub = H.hexToBytes(identityPubHex);
-    const fp = await H.fingerprint(state.identity.publicBytes, identityPub);
-    await state.store.upsertContact(fp, username, identityPubHex);
-    state.peers.set(fp, { username, identityPubHex });
-    refreshPeerList();
+    await sendContactRequest(parts[1], parts[2]);
   }
 
-  // Adds a person found via search as a contact (skipping that if
-  // they're already one — clicking a repeated search result should
-  // just open the existing chat, not create a duplicate upsert) and
-  // jumps straight into the chat, since "search for people to DM" means
-  // the click itself should get you to messaging them, not just add them.
-  async function addContactFromSearch(username, identityPubHex) {
+  // Requests a person as a contact — used by both the search results and
+  // the manual "paste a contact card" fallback. Never opens a chat or
+  // adds a live contact on its own: this just sends a hello (see
+  // network.js's connectRelay) and marks them "pending_out" locally,
+  // same as they'll see it as a request to accept or decline. If they're
+  // already a mutual contact, clicking through search is just a shortcut
+  // to open the existing chat instead.
+  async function sendContactRequest(username, identityPubHex) {
     const identityPub = H.hexToBytes(identityPubHex);
     const fp = await H.fingerprint(state.identity.publicBytes, identityPub);
-    if (!state.peers.has(fp)) {
-      await state.store.upsertContact(fp, username, identityPubHex);
-      state.peers.set(fp, { username, identityPubHex });
-      refreshPeerList();
-    }
     el("user-search-input").value = "";
     el("user-search-results").classList.add("hide");
-    switchSidebarTab("chats");
-    await openChat(fp);
+    const existing = state.peers.get(fp);
+    if (existing && existing.status === "accepted") {
+      switchSidebarTab("chats");
+      await openChat(fp);
+      return;
+    }
+    if (existing && existing.status === "pending_out") {
+      showAlert(`Already waiting on ${username} to accept.`);
+      return;
+    }
+    await state.store.upsertContact(fp, username, identityPubHex, undefined, "pending_out");
+    state.peers.set(fp, { username, identityPubHex, status: "pending_out" });
+    refreshPeerList();
+    try {
+      await state.net.connectRelay(identityPub, username);
+      showAlert(`Request sent to ${username}. You'll be able to message once they accept.`);
+    } catch (e) {
+      console.error("send contact request failed:", e);
+      showAlert("Could not reach the relay to send the request: " + e.message);
+    }
   }
 
   let userSearchDebounce = null;
@@ -1653,8 +1754,15 @@
         const item = document.createElement("div");
         item.className = "user-search-item";
         item.appendChild(avatarElement(m.username, null));
-        item.appendChild(document.createTextNode(m.username));
-        item.onclick = () => addContactFromSearch(m.username, m.identity_pub);
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "user-search-name";
+        nameSpan.textContent = m.username;
+        item.appendChild(nameSpan);
+        const actionSpan = document.createElement("span");
+        actionSpan.className = "user-search-action";
+        actionSpan.textContent = "Request";
+        item.appendChild(actionSpan);
+        item.onclick = () => sendContactRequest(m.username, m.identity_pub);
         results.appendChild(item);
       }
     }
@@ -1751,6 +1859,7 @@
     el("gif-search").addEventListener("input", onGifSearchInput);
 
     el("tab-chats-btn").onclick = () => switchSidebarTab("chats");
+    el("tab-requests-btn").onclick = () => switchSidebarTab("requests");
     el("tab-settings-btn").onclick = () => switchSidebarTab("settings");
     el("setting-online-status").addEventListener("change", (e) => {
       setSetting("online-status", e.target.checked);
