@@ -9,7 +9,7 @@
  * blocking the page, so the loading spinner (see app.js) actually
  * animates while it runs instead of freezing along with everything else.
  */
-importScripts("crypto.js?v=31");
+importScripts("crypto.js?v=32");
 
 self.onmessage = async (e) => {
   const { id, op, password, salt, n } = e.data;

@@ -21,7 +21,10 @@ and voice/video calls — see `webapp/README.md` for what that involved
 doesn't have). On-device AI in the browser isn't built yet.
 
 **Want to actually try the hosted web app right now?** See
-[CURRENT_LINKS.md](CURRENT_LINKS.md) for the current live URL.
+[CURRENT_LINKS.md](CURRENT_LINKS.md) for the current live URL, or
+[Instructions_and_Link.md](Instructions_and_Link.md) for a full
+walkthrough with screenshots (signing up, adding a contact, sending
+your first message).
 
 ## Run it (LAN only, no setup)
 

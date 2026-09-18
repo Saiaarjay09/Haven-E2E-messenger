@@ -251,9 +251,13 @@
   #peer-list li.peer-pending { cursor: default; color: var(--text-tertiary); font-style: italic; }
   #peer-list li.peer-pending:hover { background: none; }
   #requests-list { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
-  .request-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; }
-  .request-row .request-name { flex: 1; font-size: 14px; color: var(--text); }
-  .request-row button { width: auto; padding: 5px 10px; font-size: 12px; }
+  /* Wraps onto two lines (name row, then buttons) rather than one flex
+     row — a long username plus two buttons doesn't fit the 260px
+     sidebar on one line, and truncating the name is worse than
+     wrapping since it's the one thing you need to read to decide. */
+  .request-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 6px; }
+  .request-row .request-name { flex: 1 0 100%; font-size: 14px; color: var(--text); min-width: 0; overflow-wrap: break-word; }
+  .request-row button { width: auto; padding: 5px 10px; font-size: 12px; margin-left: 38px; }
   #settings-panel { flex: 1; overflow-y: auto; padding: 14px; }
   .settings-section { margin-bottom: 22px; }
   .settings-section h3 { margin: 0 0 10px; font-size: 12px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
@@ -585,19 +589,19 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=31"></script>
-<script src="js/scrypt-worker-client.js?v=31"></script>
-<script src="js/storage.js?v=31"></script>
-<script src="js/network.js?v=31"></script>
-<script src="js/auth.js?v=31"></script>
-<script src="js/backup.js?v=31"></script>
-<script src="js/attachments.js?v=31"></script>
-<script src="js/groups.js?v=31"></script>
-<script src="js/calls.js?v=31"></script>
-<script src="js/groupcalls.js?v=31"></script>
-<script src="js/avatars.js?v=31"></script>
-<script src="js/giphy.js?v=31"></script>
-<script src="js/translation.js?v=31"></script>
-<script src="js/app.js?v=31"></script>
+<script src="js/crypto.js?v=32"></script>
+<script src="js/scrypt-worker-client.js?v=32"></script>
+<script src="js/storage.js?v=32"></script>
+<script src="js/network.js?v=32"></script>
+<script src="js/auth.js?v=32"></script>
+<script src="js/backup.js?v=32"></script>
+<script src="js/attachments.js?v=32"></script>
+<script src="js/groups.js?v=32"></script>
+<script src="js/calls.js?v=32"></script>
+<script src="js/groupcalls.js?v=32"></script>
+<script src="js/avatars.js?v=32"></script>
+<script src="js/giphy.js?v=32"></script>
+<script src="js/translation.js?v=32"></script>
+<script src="js/app.js?v=32"></script>
 </body>
 </html>
