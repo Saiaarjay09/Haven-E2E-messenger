@@ -18,6 +18,16 @@
         <string>--db</string>
         <!-- Adjust this path to wherever you cloned Haven -->
         <string>/Users/YOURNAME/Developer/haven/relay.db</string>
+        <!-- Only needed for a Tailscale Funnel deployment (see
+             WEB_DEPLOYMENT.md's Option C1) — the relay must terminate its
+             own TLS there rather than relying on Funnel to do it, or real
+             browsers' WebSocket connections fail. Get the cert with
+             `tailscale cert`; omit these two flags entirely for Option A/B
+             (a reverse proxy like Caddy/nginx handles TLS there instead). -->
+        <string>--tls-cert</string>
+        <string>/Users/YOURNAME/Library/Application Support/Haven/tls/haven.crt</string>
+        <string>--tls-key</string>
+        <string>/Users/YOURNAME/Library/Application Support/Haven/tls/haven.key</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/YOURNAME/Developer/haven</string>

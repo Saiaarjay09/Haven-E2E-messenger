@@ -46,6 +46,7 @@ import json
 import os
 import socket
 import sqlite3
+import ssl
 import threading
 import time
 
@@ -105,10 +106,19 @@ class WSClientHandle(ClientHandle):
 
 
 class RelayServer:
-    def __init__(self, port: int = DEFAULT_PORT, db_path: str = "haven_relay.db", ws_port: int | None = None):
+    def __init__(
+        self,
+        port: int = DEFAULT_PORT,
+        db_path: str = "haven_relay.db",
+        ws_port: int | None = None,
+        tls_cert: str | None = None,
+        tls_key: str | None = None,
+    ):
         self.port = port
         self.ws_port = ws_port
         self.db_path = db_path
+        self.tls_cert = tls_cert
+        self.tls_key = tls_key
         self._db_lock = threading.Lock()
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute(
@@ -235,8 +245,26 @@ class RelayServer:
         # encodes ciphertext (2x) on top of an attachment's own base64
         # encoding (1.33x), so attachments.py's 8 MB limit needs headroom
         # up to roughly 22 MB on the wire, not 1 MB.
-        async with ws_server.serve(self._handle_ws_client, "0.0.0.0", self.ws_port, max_size=32 * 1024 * 1024):
+        ssl_context = self._build_ssl_context()
+        async with ws_server.serve(
+            self._handle_ws_client, "0.0.0.0", self.ws_port, max_size=32 * 1024 * 1024, ssl=ssl_context
+        ):
             await self._ws_stop_future
+
+    def _build_ssl_context(self) -> ssl.SSLContext | None:
+        if not self.tls_cert or not self.tls_key:
+            return None
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(self.tls_cert, self.tls_key)
+        # Only ever speak plain WebSocket-over-HTTP/1.1 — this server has no
+        # HTTP/2 support, and offering "h2" in ALPN here is what caused the
+        # relay's Tailscale-Funnel-terminated TLS to fail for real browsers
+        # (see WEB_DEPLOYMENT.md): the browser's ALPN offer includes h2, and
+        # something in that negotiation path breaks the handshake outright.
+        # Terminating TLS ourselves and refusing to negotiate h2 sidesteps
+        # that entirely, regardless of what the client offers.
+        ctx.set_alpn_protocols(["http/1.1"])
+        return ctx
 
     async def _handle_ws_client(self, ws) -> None:
         identity_pub_hex: str | None = None
@@ -364,8 +392,21 @@ def main() -> None:
         help="WebSocket port for browser clients (0 to disable)",
     )
     parser.add_argument("--db", default="haven_relay.db")
+    parser.add_argument(
+        "--tls-cert",
+        default=os.environ.get("HAVEN_RELAY_TLS_CERT", ""),
+        help="Cert file for the WebSocket listener to terminate TLS itself (wss://) instead of relying on "
+        "a reverse proxy in front of it. Needed on Tailscale Funnel deployments — see WEB_DEPLOYMENT.md.",
+    )
+    parser.add_argument("--tls-key", default=os.environ.get("HAVEN_RELAY_TLS_KEY", ""))
     args = parser.parse_args()
-    RelayServer(port=args.port, db_path=args.db, ws_port=args.ws_port or None).start()
+    RelayServer(
+        port=args.port,
+        db_path=args.db,
+        ws_port=args.ws_port or None,
+        tls_cert=args.tls_cert or None,
+        tls_key=args.tls_key or None,
+    ).start()
 
 
 if __name__ == "__main__":

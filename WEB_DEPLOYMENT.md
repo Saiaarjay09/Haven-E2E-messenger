@@ -143,27 +143,53 @@ No domain purchase, no NS record changes, nothing to renew.
 3. The first time you expose anything, Tailscale will print a one-time
    approval link (`https://login.tailscale.com/f/funnel?node=...`) —
    visit it and approve Funnel for your account.
-4. Expose each of Haven's three services on one of Funnel's three
-   allowed ports (443, 8443, 10000 — this restriction is on Tailscale's
-   side, not Haven's):
+4. Expose the static file server and accounts API normally:
    ```bash
-   tailscale funnel --bg --https=443   8899  # static files
-   tailscale funnel --bg --https=8443  8000  # accounts API
-   tailscale funnel --bg --tls-terminated-tcp=10000 8444  # relay (WebSocket)
+   tailscale funnel --bg --https=443  8899  # static files
+   tailscale funnel --bg --https=8443 8000  # accounts API
    ```
-   The relay specifically needs `--tls-terminated-tcp`, not `--https`,
-   even though it's still served as `wss://` to browsers. `--https`
-   makes Funnel negotiate and speak HTTP/2 with the browser, and modern
-   Chrome then tries to open the WebSocket as an HTTP/2 extended-CONNECT
-   stream (RFC 8441) — which Funnel doesn't bridge through to a plain
-   HTTP/1.1 backend like `relay_server.py`, so the connection fails
-   instantly (`1006`) for real browsers even though `curl --http1.1`
-   against the same URL looks fine. `--tls-terminated-tcp` makes Funnel
-   terminate TLS (so you still get a valid public cert, no self-signed
-   warnings) but hand off raw decrypted bytes instead of parsing HTTP —
-   that sidesteps the HTTP/2 negotiation entirely and lets the classic
-   WebSocket upgrade reach the backend intact.
-5. Your permanent links (see `tailscale funnel status` any time to
+5. The relay needs different treatment. **Do not use `--https` or
+   `--tls-terminated-tcp` for it** — both route the connection through
+   Funnel's own TLS layer, and Funnel's edge negotiates HTTP/2 (ALPN
+   `h2`) with real browsers by default. A browser's `wss://` connection
+   then tries to open as an HTTP/2 extended-CONNECT stream (RFC 8441),
+   and Funnel's edge either fails to bridge that to a plain HTTP/1.1
+   backend (`--https`: instant `1006` close in every real browser) or,
+   with `--tls-terminated-tcp`, resets the raw TCP connection outright
+   as soon as it sees an `h2`-offering ClientHello — both looked fine
+   with `curl --http1.1` (which never offers `h2`) and both silently
+   broke every actual browser, which is exactly why this could pass all
+   manual spot-checks from one device while every friend's device saw
+   "relay not connected."
+
+   The fix: have `relay_server.py` terminate TLS **itself**, and expose
+   it through Funnel as an untouched raw TCP forward (`--tcp`, no TLS
+   awareness on Funnel's side at all):
+   ```bash
+   # One-time: get a real public cert for your Funnel hostname.
+   mkdir -p ~/Library/Application\ Support/Haven/tls
+   tailscale cert \
+     --cert-file=~/Library/Application\ Support/Haven/tls/haven.crt \
+     --key-file=~/Library/Application\ Support/Haven/tls/haven.key \
+     <device>.<tailnet>.ts.net
+
+   tailscale funnel --bg --tcp=10000 8444
+   ```
+   Then pass `--tls-cert`/`--tls-key` (or `HAVEN_RELAY_TLS_CERT`/
+   `HAVEN_RELAY_TLS_KEY`) to `relay_server.py` pointing at those two
+   files — see `com.haven.relay.plist` in `deploy/`. The relay's own TLS
+   context refuses to advertise `h2` in ALPN (it only ever speaks
+   HTTP/1.1), so no matter what a connecting browser offers, negotiation
+   always lands on plain HTTP/1.1 and the classic WebSocket upgrade goes
+   through — verified against real Funnel edge IPs with browsers
+   offering `h2`, not just `curl --http1.1`.
+
+   A `tailscale cert`-issued cert is a point-in-time Let's Encrypt cert
+   (~90 day validity) — install `deploy/com.haven.cert-renew.plist`
+   (fill in your username/paths) too, so `deploy/renew-relay-cert.sh`
+   re-issues it daily (a no-op most days) and restarts the relay only on
+   the day it actually renews.
+6. Your permanent links (see `tailscale funnel status` any time to
    re-check them):
    - Web app: `https://<device>.<tailnet>.ts.net`
    - Accounts server URL: `https://<device>.<tailnet>.ts.net:8443`
@@ -171,10 +197,12 @@ No domain purchase, no NS record changes, nothing to renew.
 
    These only change if you rename the device or its tailnet — routine
    restarts, reboots, and crashes don't affect them. If you do rename it,
-   re-run `tailscale funnel reset` then step 4 again under the new name.
-6. Keep the three Haven processes themselves running via the
+   re-run `tailscale funnel reset` then steps 4-5 again under the new
+   name (and re-issue the relay's cert for the new hostname).
+7. Keep the four Haven processes themselves running via the
    `com.haven.accounts.plist` / `com.haven.relay.plist` /
-   `com.haven.static.plist` templates in `deploy/`, same as below.
+   `com.haven.static.plist` / `com.haven.cert-renew.plist` templates in
+   `deploy/`, same as below.
 
 ### C2 (alternative): Cloudflare quick tunnels — free, but the URL rotates
 

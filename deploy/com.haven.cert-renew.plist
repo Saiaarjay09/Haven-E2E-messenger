@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs deploy/renew-relay-cert.sh once a day. The relay terminates its
+  own TLS (see WEB_DEPLOYMENT.md), using a cert fetched once via
+  `tailscale cert` — that's a point-in-time Let's Encrypt cert (~90 day
+  validity), not something Tailscale keeps current on disk for you the
+  way it does for its own Funnel-terminated certs, so without this job
+  the relay would silently start failing TLS handshakes again in ~90
+  days when the cert expires.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haven.cert-renew</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <!-- Adjust this path to wherever you cloned Haven -->
+        <string>/Users/YOURNAME/Developer/haven/deploy/renew-relay-cert.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>86400</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/cert-renew.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURNAME/Library/Logs/Haven/cert-renew.log</string>
+</dict>
+</plist>
