@@ -44,7 +44,7 @@ const HavenBackup = (() => {
     };
 
     const salt = crypto.getRandomValues(new Uint8Array(16));
-    const key = await H.deriveKeyFromPassword(password, salt);
+    const key = await HavenScryptWorker.deriveKeyFromPassword(password, salt);
     const plaintext = H.utf8(JSON.stringify(bundle));
     const ciphertext = await H.encryptDeniable(key, plaintext);
     return H.concatBytes(salt, ciphertext);
@@ -53,7 +53,7 @@ const HavenBackup = (() => {
   async function restoreBackup(fileBytes, password) {
     const salt = fileBytes.slice(0, 16);
     const ciphertext = fileBytes.slice(16);
-    const key = await H.deriveKeyFromPassword(password, salt);
+    const key = await HavenScryptWorker.deriveKeyFromPassword(password, salt);
     const plaintext = await H.decryptDeniable(key, ciphertext);
 
     let bundle;

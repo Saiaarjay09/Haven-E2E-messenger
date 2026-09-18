@@ -491,8 +491,17 @@ const Haven = (() => {
   }
 
   function blockMix(B, r) {
-    // B is 2r 64-byte blocks concatenated.
-    let X = B.slice(B.length - 64);
+    // B is 2r 64-byte blocks concatenated. subarray (a view, not a
+    // copy) is safe here specifically because X is only ever READ in
+    // the loop below (`block[j] ^= X[j]` mutates `block`, a separate
+    // slice-produced copy, never X) before being reassigned to
+    // salsa20_8's return value — so nothing ever writes through this
+    // view back into B's underlying buffer. B itself still gets
+    // independent per-iteration copies below (`block = B.slice(...)`)
+    // where that copy IS load-bearing: romix's V[] can hold a
+    // reference to this same buffer via aliasing, and a subarray there
+    // would let this function's mutations corrupt V's stored snapshot.
+    let X = B.subarray(B.length - 64);
     const out = new Uint8Array(B.length);
     let outIdx1 = 0;
     let outIdx2 = r * 64;
@@ -512,10 +521,24 @@ const Haven = (() => {
   }
 
   function integerify(B, r) {
-    // Last 64-byte block's first 8 bytes, little-endian, per RFC 7914.
+    // Spec-wise this is the last 64-byte block's first 8 bytes,
+    // little-endian, immediately reduced mod N by every caller. Only
+    // the low 32 bits are actually read here (not the full 64-bit
+    // value) because N in this codebase is always a power of 2 no
+    // larger than 2**17 (see SCRYPT_N/SCRYPT_N_STRONG below and
+    // haven/crypto.py's SCRYPT_N_LEGACY/accounts_server.py's
+    // SCRYPT_N_CURRENT) — for a power-of-2 N, X mod N depends only on
+    // X's low log2(N) bits, all of which fit in the low 32, making the
+    // high 32 bits provably irrelevant to the result. This is what
+    // lets romix's `mod N` be a plain bitwise `& (N-1)` below instead
+    // of a BigInt modulo — by far the hottest single cost in the whole
+    // derivation, since this runs on every one of romix's N outer-loop
+    // iterations (up to 131072 times for SCRYPT_N_STRONG). Verified
+    // byte-identical against RFC 7914's official vectors and
+    // haven/crypto.py's output afterward — see test_crypto.html.
     const lastBlockOffset = (2 * r - 1) * 64;
-    const view = new DataView(B.buffer, B.byteOffset + lastBlockOffset, 8);
-    return view.getBigUint64(0, true);
+    const view = new DataView(B.buffer, B.byteOffset + lastBlockOffset, 4);
+    return view.getUint32(0, true);
   }
 
   function xorBytes(a, b) {
@@ -532,7 +555,7 @@ const Haven = (() => {
       X = blockMix(X, r);
     }
     for (let i = 0; i < N; i++) {
-      const j = Number(integerify(X, r) % BigInt(N));
+      const j = integerify(X, r) & (N - 1); // N mod-power-of-2 trick — see integerify's comment
       X = blockMix(xorBytes(X, V[j]), r);
     }
     return X;

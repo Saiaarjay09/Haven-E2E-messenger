@@ -86,6 +86,17 @@
   button.primary:hover { background: #d6a860; border-color: #d6a860; }
   button.danger { color: var(--danger); }
 
+  /* -- loading state for async buttons (login, signup, reset, backup) -- */
+  button.loading { color: transparent !important; pointer-events: none; position: relative; }
+  .btn-spinner {
+    display: none; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px;
+    margin: -7px 0 0 -7px; border: 2px solid rgba(255,255,255,0.25); border-top-color: var(--text);
+    border-radius: 50%; animation: btn-spin 0.7s linear infinite;
+  }
+  button.primary .btn-spinner { border: 2px solid rgba(0,0,0,0.2); border-top-color: var(--accent-text); }
+  button.loading .btn-spinner { display: block; }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
+
   input[type="text"], input[type="password"], input:not([type]), input[type="file"] {
     font-family: inherit; font-size: 14px; color: var(--text); background: var(--bg-input);
     border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
@@ -317,8 +328,8 @@
   <label>Password</label>
   <input id="password" type="password" autocomplete="current-password">
   <div>
-    <button id="login-btn" class="primary">Log in</button>
-    <button id="signup-btn">Create account</button>
+    <button id="login-btn" class="primary">Log in<span class="btn-spinner"></span></button>
+    <button id="signup-btn">Create account<span class="btn-spinner"></span></button>
   </div>
   <p style="margin-top:14px;">
     <a href="#" id="forgot-password-link" style="font-size:13px;">Forgot password?</a>
@@ -336,7 +347,7 @@
     <label>New password</label>
     <input id="new-password-input" type="password" autocomplete="new-password">
     <div>
-      <button id="reset-password-btn" class="primary">Reset password</button>
+      <button id="reset-password-btn" class="primary">Reset password<span class="btn-spinner"></span></button>
       <button id="forgot-password-cancel">Cancel</button>
     </div>
   </div>
@@ -351,7 +362,7 @@
     <label>Backup password</label>
     <input id="restore-backup-password" type="password">
     <div>
-      <button id="restore-backup-confirm" class="primary">Restore</button>
+      <button id="restore-backup-confirm" class="primary">Restore<span class="btn-spinner"></span></button>
       <button id="restore-backup-cancel">Cancel</button>
     </div>
   </div>
@@ -539,7 +550,7 @@
     <input id="backup-password" type="password" placeholder="Choose a backup password" class="full-width">
     <div class="modal-actions">
       <button id="backup-cancel">Cancel</button>
-      <button id="backup-confirm" class="primary">Download</button>
+      <button id="backup-confirm" class="primary">Download<span class="btn-spinner"></span></button>
     </div>
   </div>
 </div>
@@ -550,18 +561,19 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=27"></script>
-<script src="js/storage.js?v=27"></script>
-<script src="js/network.js?v=27"></script>
-<script src="js/auth.js?v=27"></script>
-<script src="js/backup.js?v=27"></script>
-<script src="js/attachments.js?v=27"></script>
-<script src="js/groups.js?v=27"></script>
-<script src="js/calls.js?v=27"></script>
-<script src="js/groupcalls.js?v=27"></script>
-<script src="js/avatars.js?v=27"></script>
-<script src="js/giphy.js?v=27"></script>
-<script src="js/translation.js?v=27"></script>
-<script src="js/app.js?v=27"></script>
+<script src="js/crypto.js?v=30"></script>
+<script src="js/scrypt-worker-client.js?v=30"></script>
+<script src="js/storage.js?v=30"></script>
+<script src="js/network.js?v=30"></script>
+<script src="js/auth.js?v=30"></script>
+<script src="js/backup.js?v=30"></script>
+<script src="js/attachments.js?v=30"></script>
+<script src="js/groups.js?v=30"></script>
+<script src="js/calls.js?v=30"></script>
+<script src="js/groupcalls.js?v=30"></script>
+<script src="js/avatars.js?v=30"></script>
+<script src="js/giphy.js?v=30"></script>
+<script src="js/translation.js?v=30"></script>
+<script src="js/app.js?v=30"></script>
 </body>
 </html>

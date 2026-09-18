@@ -39,20 +39,27 @@ const HavenGroups = (() => {
 
     static async create(net, store, identity, username) {
       const gm = new GroupManager(net, store, identity, username);
-      for (const { groupId } of await store.listGroups()) {
-        const loaded = await store.loadGroup(groupId);
-        if (!loaded) continue;
+      const groupIds = (await store.listGroups()).map((g) => g.groupId);
+      // Each loadGroup() is an independent IndexedDB round-trip — firing
+      // them all at once instead of one-at-a-time is the difference
+      // between O(groups) and O(1) round-trips on login for anyone in
+      // more than a couple of groups.
+      const loaded = await Promise.all(groupIds.map((groupId) => store.loadGroup(groupId)));
+      for (let i = 0; i < groupIds.length; i++) {
+        const groupId = groupIds[i];
+        const g = loaded[i];
+        if (!g) continue;
         gm.groups.set(groupId, {
-          name: loaded.name,
-          members: new Map(Object.entries(loaded.state.members)),
-          myChain: new H.SenderKeyChain(H.hexToBytes(loaded.state.myChain.chainKey), loaded.state.myChain.index),
+          name: g.name,
+          members: new Map(Object.entries(g.state.members)),
+          myChain: new H.SenderKeyChain(H.hexToBytes(g.state.myChain.chainKey), g.state.myChain.index),
           peerChains: new Map(
-            Object.entries(loaded.state.peerChains).map(([pubHex, c]) => [
+            Object.entries(g.state.peerChains).map(([pubHex, c]) => [
               pubHex,
               new H.SenderKeyChain(H.hexToBytes(c.chainKey), c.index),
             ])
           ),
-          removed: loaded.state.removed || false,
+          removed: g.state.removed || false,
         });
       }
       return gm;

@@ -19,7 +19,16 @@ const HavenAuth = (() => {
   // says it was actually created under (see login/resetPassword below,
   // which read password_kdf_n/recovery_kdf_n back from the server
   // rather than assuming this constant applies to every account).
-  const SCRYPT_N_STRONG = 2 ** 17;
+  //
+  // Deliberately 2**16, not OWASP's stricter 2**17 minimum — this repo
+  // has no native scrypt to lean on (WebCrypto doesn't provide one) and
+  // the from-spec JS implementation measured ~3-5s wall-clock at
+  // 2**17 on real hardware, which is a genuinely bad "click Log in"
+  // experience on every affected login, not just once at signup. This
+  // still doubles the original N=2**15, and Argon2id (see
+  // accounts_server.py) — the actually-preferred algorithm here —
+  // protects the auth_key regardless of this number.
+  const SCRYPT_N_STRONG = 2 ** 16;
 
   async function loadWordlist() {
     if (!wordlist) wordlist = await fetch("js/wordlist.json").then((r) => r.json());
@@ -51,15 +60,23 @@ const HavenAuth = (() => {
 
     async signup(username, password) {
       const identity = await H.generateKeyPair();
-
-      const pwSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: pwAuthKey, encKey: pwEncKey } = await H.deriveSplitKeys(password, pwSalt, SCRYPT_N_STRONG);
-      const encryptedPw = await H.encryptAuthenticated(pwEncKey, identity.privateBytes, H.utf8(username));
-
       const phrase = await generateRecoveryPhrase();
       const normalized = normalizePhrase(phrase);
+
+      const pwSalt = crypto.getRandomValues(new Uint8Array(16));
       const recSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: recAuthKey, encKey: recEncKey } = await H.deriveSplitKeys(normalized, recSalt, SCRYPT_N_STRONG);
+      // Both derivations are independent (different secrets, different
+      // salts) — running them via Promise.all lets the worker start the
+      // second as soon as it's free instead of the main thread awaiting
+      // one fully before even asking for the other.
+      const [
+        { authKey: pwAuthKey, encKey: pwEncKey },
+        { authKey: recAuthKey, encKey: recEncKey },
+      ] = await Promise.all([
+        HavenScryptWorker.deriveSplitKeys(password, pwSalt, SCRYPT_N_STRONG),
+        HavenScryptWorker.deriveSplitKeys(normalized, recSalt, SCRYPT_N_STRONG),
+      ]);
+      const encryptedPw = await H.encryptAuthenticated(pwEncKey, identity.privateBytes, H.utf8(username));
       const encryptedRec = await H.encryptAuthenticated(recEncKey, identity.privateBytes, H.utf8(username));
 
       const resp = await fetch(`${this.baseUrl}/api/signup`, {
@@ -95,7 +112,7 @@ const HavenAuth = (() => {
       // Whatever cost THIS account was actually created/last-reset
       // under — not necessarily SCRYPT_N_STRONG, for an account that
       // predates it (see accounts_db.py's password_kdf_n).
-      const { authKey, encKey } = await H.deriveSplitKeys(password, pwSalt, password_kdf_n);
+      const { authKey, encKey } = await HavenScryptWorker.deriveSplitKeys(password, pwSalt, password_kdf_n);
 
       const resp = await fetch(`${this.baseUrl}/api/login`, {
         method: "POST",
@@ -134,7 +151,7 @@ const HavenAuth = (() => {
       if (!saltResp.ok) throw new Error("No such account.");
       const { recovery_salt, recovery_kdf_n } = await saltResp.json();
       const recSalt = H.hexToBytes(recovery_salt);
-      const { authKey, encKey } = await H.deriveSplitKeys(normalized, recSalt, recovery_kdf_n);
+      const { authKey, encKey } = await HavenScryptWorker.deriveSplitKeys(normalized, recSalt, recovery_kdf_n);
 
       const verifyResp = await fetch(`${this.baseUrl}/api/forgot-password/verify`, {
         method: "POST",
@@ -154,7 +171,7 @@ const HavenAuth = (() => {
       // fully up to date, same as accounts_server.py does for the hash
       // format on this same call.
       const newSalt = crypto.getRandomValues(new Uint8Array(16));
-      const { authKey: newAuthKey, encKey: newEncKey } = await H.deriveSplitKeys(newPassword, newSalt, SCRYPT_N_STRONG);
+      const { authKey: newAuthKey, encKey: newEncKey } = await HavenScryptWorker.deriveSplitKeys(newPassword, newSalt, SCRYPT_N_STRONG);
       const newBlob = await H.encryptAuthenticated(newEncKey, privateBytes, H.utf8(username));
 
       const resetResp = await fetch(`${this.baseUrl}/api/forgot-password/reset`, {

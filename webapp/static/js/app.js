@@ -68,6 +68,15 @@
     el("login-status").textContent = msg;
   }
 
+  // Shows a spinner in place of the button's own label and disables it
+  // — disabling doubles as the guard against a repeated click re-firing
+  // the same signup/login/etc. while one is already in flight, which
+  // nothing here previously prevented.
+  function setButtonLoading(btn, loading) {
+    btn.classList.toggle("loading", loading);
+    btn.disabled = loading;
+  }
+
   function showRecoveryPhrase(phrase) {
     return new Promise((resolve) => {
       el("recovery-phrase").textContent = phrase;
@@ -85,6 +94,7 @@
     const accountsUrl = defaultAccountsUrl();
     if (!username || !password) return setStatus("Enter a username and password.");
     state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
+    setButtonLoading(el("signup-btn"), true);
     try {
       const { identity, recoveryPhrase } = await state.accountsClient.signup(username, password);
       await showRecoveryPhrase(recoveryPhrase);
@@ -92,6 +102,8 @@
     } catch (e) {
       console.error("signup failed:", e);
       setStatus(e.message);
+    } finally {
+      setButtonLoading(el("signup-btn"), false);
     }
   }
 
@@ -101,12 +113,15 @@
     const accountsUrl = defaultAccountsUrl();
     if (!username || !password) return setStatus("Enter a username and password.");
     state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
+    setButtonLoading(el("login-btn"), true);
     try {
       const { identity } = await state.accountsClient.login(username, password);
       await onLoggedIn(identity, username);
     } catch (e) {
       console.error("login failed:", e);
       setStatus(e.message);
+    } finally {
+      setButtonLoading(el("login-btn"), false);
     }
   }
 
@@ -126,6 +141,7 @@
       return setStatus("Enter your username above, plus your recovery phrase and a new password.");
     }
     state.accountsClient = new HavenAuth.AccountsClient(accountsUrl);
+    setButtonLoading(el("reset-password-btn"), true);
     try {
       const { identity } = await state.accountsClient.resetPassword(username, recoveryPhrase, newPassword);
       el("forgot-password-row").hidden = true;
@@ -134,6 +150,8 @@
     } catch (e) {
       console.error("password reset failed:", e);
       setStatus(e.message);
+    } finally {
+      setButtonLoading(el("reset-password-btn"), false);
     }
   }
 
@@ -149,6 +167,7 @@
     if (!fileInput.files.length || !password) {
       return setStatus("Choose a backup file and enter its password.");
     }
+    setButtonLoading(el("restore-backup-confirm"), true);
     try {
       const fileBytes = new Uint8Array(await fileInput.files[0].arrayBuffer());
       const bundle = await HavenBackup.restoreBackup(fileBytes, password);
@@ -166,6 +185,8 @@
     } catch (e) {
       console.error("restore backup failed:", e);
       setStatus(e.message);
+    } finally {
+      setButtonLoading(el("restore-backup-confirm"), false);
     }
   }
 
@@ -183,6 +204,7 @@
   async function doBackup() {
     const password = el("backup-password").value;
     if (!password) return;
+    setButtonLoading(el("backup-confirm"), true);
     try {
       const bytes = await HavenBackup.exportBackup(state.identity, state.username, state.store, password);
       const blob = new Blob([bytes], { type: "application/octet-stream" });
@@ -198,6 +220,8 @@
     } catch (e) {
       console.error("backup export failed:", e);
       appendLine("sys", "Backup failed: " + e.message);
+    } finally {
+      setButtonLoading(el("backup-confirm"), false);
     }
   }
 

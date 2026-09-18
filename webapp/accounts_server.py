@@ -42,12 +42,19 @@ USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,23}$")
 # accounts_db.py's password_kdf_n/recovery_kdf_n, returned at
 # /api/login-salt and /api/recovery-salt) so their password keeps
 # working. OWASP's current minimum recommendation for scrypt when
-# Argon2id isn't available is N=2**17 — used here for password hashes'
-# derivation even though Argon2id (see _hasher below) IS what actually
-# protects the resulting auth_key at rest; the scrypt step is still
-# what stands between a weak password and a hosted-server compromise
-# reaching enc_key, so it's worth strengthening independently.
-SCRYPT_N_CURRENT = 2**17
+# Argon2id isn't available is N=2**17, but this JS scrypt
+# implementation measured ~3-5s wall-clock at that cost (no native
+# WebCrypto scrypt exists to lean on) — noticeable on every login for
+# an affected account, not just once. N=2**16 is a deliberate,
+# explicit choice below OWASP's strict minimum: still double the
+# original N=2**15 this app used before, cutting that wait to roughly
+# 1.5-2.5s, while Argon2id (see _hasher below) — which OWASP lists as
+# the actual first-choice recommendation over scrypt — still protects
+# the resulting auth_key at rest regardless of this number. The scrypt
+# step here specifically guards a narrower case (a weak password
+# combined with a stolen encrypted_identity_blob), which is why this
+# tradeoff was made towards usability rather than maxing the cost out.
+SCRYPT_N_CURRENT = 2**16
 
 # Argon2id is OWASP's current first-choice recommendation for password
 # hashing (stronger against GPU/ASIC cracking than bcrypt's fixed,
