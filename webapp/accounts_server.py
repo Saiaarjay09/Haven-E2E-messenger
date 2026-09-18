@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import sqlite3
 import threading
 import time
 
@@ -142,6 +143,17 @@ class UpdateIdentityPubRequest(BaseModel):
     identity_pub: str
 
 
+class SyncContactRequest(BaseModel):
+    username: str
+    password_auth_key: str
+    contact_username: str
+
+
+class MutualFriendsRequest(BaseModel):
+    username: str
+    password_auth_key: str
+
+
 class RecoveryVerifyRequest(BaseModel):
     username: str
     recovery_auth_key: str
@@ -189,6 +201,11 @@ search_limiter = SimpleRateLimiter(max_attempts=30, window_seconds=60.0)
 # IP (not username) since the whole point of enumeration is iterating
 # through many different usernames.
 lookup_limiter = SimpleRateLimiter(max_attempts=60, window_seconds=60.0)
+# Covers /api/contacts/sync and /api/mutual-friends — both authenticated
+# (same password_auth_key check as update-identity-pub) so this is about
+# limiting request volume, not guessing a secret, hence the more
+# generous budget than login_limiter's.
+contacts_limiter = SimpleRateLimiter(max_attempts=60, window_seconds=60.0)
 
 # Deliberately never accepted from a request — an OpenAI key is tied to
 # real billing, unlike this file's other secrets (auth_key/enc_key,
@@ -341,6 +358,57 @@ def search_users(q: str, exclude: str = ""):
         return {"results": []}
     rows = db.search_usernames(q, exclude_username=exclude, limit=15)
     return {"results": [{"username": r["username"], "identity_pub": r["identity_pub"]} for r in rows]}
+
+
+def _require_password_auth(username: str, password_auth_key: str) -> sqlite3.Row:
+    """Shared by every endpoint below that needs to act as a specific
+    account — same password_auth_key check /api/login itself uses, so
+    calling this never prompts the user for their password again (the
+    browser already has auth_key in memory for the session — see
+    auth.js's AccountsClient)."""
+    row = db.get_by_username(username)
+    stored_hash = row["password_auth_hash"] if row else _DUMMY_HASH
+    ok, upgraded = _verify_secret(stored_hash, password_auth_key)
+    if not row or not ok:
+        raise HTTPException(status_code=401, detail="Wrong username or password.")
+    if upgraded:
+        db.upgrade_password_hash(username, upgraded)
+    return row
+
+
+@app.post("/api/contacts/sync")
+def sync_contact(req: SyncContactRequest):
+    """Records that req.username and req.contact_username are now
+    mutual (accepted) contacts — see network.js, which calls this the
+    moment a hello/hello_ack handshake actually completes, never on a
+    one-sided request. This is the one place this server learns
+    anything about the social graph beyond the username directory
+    itself — see accounts_db.py's module docstring for that trade-off."""
+    contacts_limiter.check(req.username.lower())
+    _require_password_auth(req.username, req.password_auth_key)
+    try:
+        _validate_username(req.contact_username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.add_contact_edge(req.username, req.contact_username)
+    return {"status": "ok"}
+
+
+@app.post("/api/mutual-friends")
+def mutual_friends(req: MutualFriendsRequest):
+    """Powers the Mutual Friends tab: accounts that share at least one
+    contact with you, that you're not already connected to. Only ever
+    reads edges recorded by sync_contact above — this endpoint itself
+    doesn't add anything to the graph."""
+    contacts_limiter.check(req.username.lower())
+    _require_password_auth(req.username, req.password_auth_key)
+    rows = db.suggest_mutual_friends(req.username, limit=15)
+    return {
+        "results": [
+            {"username": r["username"], "identity_pub": r["identity_pub"], "mutual_count": r["mutual_count"]}
+            for r in rows
+        ]
+    }
 
 
 @app.post("/api/forgot-password/verify")

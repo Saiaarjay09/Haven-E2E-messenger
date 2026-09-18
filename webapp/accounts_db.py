@@ -36,6 +36,16 @@ What's stored per account, and why each field is safe to store server-side:
     which cost to re-derive with for THIS account, rather than every
     account silently being forced onto a value that would change what
     their existing password derives to.
+
+The contact_edges table is a genuine exception to the "server learns
+nothing new" framing above: it's a deliberate, opt-in-by-use record of
+WHO IS MUTUAL CONTACTS WITH WHOM (an edge is only ever written once two
+accounts have actually gone through the invite/accept flow — see
+webapp/static/js/network.js — never on a one-sided request), stored
+only to power "people you may know" suggestions (see
+suggest_mutual_friends). This is real centralized social-graph
+knowledge the server did not have before and a self-hoster should
+weigh that the same way as the username directory itself.
 """
 
 from __future__ import annotations
@@ -82,6 +92,7 @@ class AccountsDB:
         self.conn.commit()
         self._migrate_identity_pub_column()
         self._migrate_kdf_n_columns()
+        self._migrate_contact_edges_table()
 
     # identity_pub is NOT a secret — it's exactly what a contact card
     # already hands to anyone (haven1:username:pubkeyhex), so storing it
@@ -110,6 +121,23 @@ class AccountsDB:
             self.conn.execute("ALTER TABLE accounts ADD COLUMN password_kdf_n INTEGER NOT NULL DEFAULT 32768")
         if "recovery_kdf_n" not in cols:
             self.conn.execute("ALTER TABLE accounts ADD COLUMN recovery_kdf_n INTEGER NOT NULL DEFAULT 32768")
+        self.conn.commit()
+
+    # One row per mutual-contact PAIR, not per direction — username_a is
+    # always the lexicographically smaller of the two (see add_contact_edge)
+    # so (alice, bob) and (bob, alice) collapse to the same row instead of
+    # needing two and keeping them in sync.
+    def _migrate_contact_edges_table(self) -> None:
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS contact_edges (
+                username_a TEXT NOT NULL,
+                username_b TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (username_a, username_b)
+            );
+            """
+        )
         self.conn.commit()
 
     def is_username_available(self, username: str) -> bool:
@@ -240,6 +268,59 @@ class AccountsDB:
                 (new_hash, time.time(), username.lower()),
             )
             self.conn.commit()
+
+    # Records that these two usernames are now mutual (accepted) contacts
+    # — called once per pair, the first time either side observes the
+    # OTHER as an accepted contact (see network.js's status transitions),
+    # never on a one-sided request. Stored with the pair sorted so it's
+    # idempotent regardless of which side calls it first or again later
+    # (e.g. after a "delete chat" and re-add) — INSERT OR IGNORE makes a
+    # repeat call a no-op rather than an error.
+    def add_contact_edge(self, username_a: str, username_b: str) -> None:
+        a, b = sorted([username_a.lower(), username_b.lower()])
+        if a == b:
+            return
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO contact_edges (username_a, username_b, created_at) VALUES (?, ?, ?)",
+                (a, b, time.time()),
+            )
+            self.conn.commit()
+
+    # "People you may know": accounts that share at least one mutual
+    # contact with `username`, excluding username itself and anyone
+    # already directly connected to it. Ranked by how many mutual
+    # contacts they share (most overlap first) since that's the
+    # strongest signal this table can offer.
+    def suggest_mutual_friends(self, username: str, limit: int = 15) -> list[sqlite3.Row]:
+        u = username.lower()
+        with self._lock:
+            return self.conn.execute(
+                """
+                WITH my_contacts AS (
+                    SELECT username_b AS peer FROM contact_edges WHERE username_a = ?
+                    UNION
+                    SELECT username_a AS peer FROM contact_edges WHERE username_b = ?
+                ),
+                candidates AS (
+                    SELECT ce.username_b AS peer FROM contact_edges ce
+                        JOIN my_contacts mc ON ce.username_a = mc.peer
+                    UNION ALL
+                    SELECT ce.username_a AS peer FROM contact_edges ce
+                        JOIN my_contacts mc ON ce.username_b = mc.peer
+                )
+                SELECT a.username AS username, a.identity_pub AS identity_pub, COUNT(*) AS mutual_count
+                FROM candidates c
+                JOIN accounts a ON a.username_lower = c.peer
+                WHERE c.peer != ?
+                  AND c.peer NOT IN (SELECT peer FROM my_contacts)
+                  AND a.identity_pub IS NOT NULL AND a.identity_pub != ''
+                GROUP BY c.peer
+                ORDER BY mutual_count DESC, c.peer
+                LIMIT ?
+                """,
+                (u, u, u, limit),
+            ).fetchall()
 
     def close(self) -> None:
         with self._lock:

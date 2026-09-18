@@ -242,7 +242,7 @@
   .user-search-note { padding: 9px 10px; font-size: 13px; color: var(--text-tertiary); }
 
   #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-radius: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+  .sidebar-tab { flex: 1; padding: 10px 2px; background: none; border: none; border-radius: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 12px; color: var(--text-secondary); }
   .sidebar-tab:hover { background: var(--bg-elevated-2); }
   .sidebar-tab.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
   .tab-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
@@ -258,6 +258,14 @@
   .request-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 6px; }
   .request-row .request-name { flex: 1 0 100%; font-size: 14px; color: var(--text); min-width: 0; overflow-wrap: break-word; }
   .request-row button { width: auto; padding: 5px 10px; font-size: 12px; margin-left: 38px; }
+
+  /* -- Suggested (mutual friends) tab -- */
+  #mutual-list { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
+  .mutual-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 6px; }
+  .mutual-row .mutual-name { flex: 1 0 100%; font-size: 14px; color: var(--text); min-width: 0; overflow-wrap: break-word; }
+  .mutual-row .mutual-count { flex: 1 0 100%; margin-left: 38px; font-size: 12px; color: var(--text-tertiary); }
+  .mutual-row button { width: auto; padding: 5px 10px; font-size: 12px; margin-left: 38px; }
+
   #settings-panel { flex: 1; overflow-y: auto; padding: 14px; }
   .settings-section { margin-bottom: 22px; }
   .settings-section h3 { margin: 0 0 10px; font-size: 12px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
@@ -407,10 +415,12 @@
     <div id="sidebar-tabs">
       <button id="tab-chats-btn" class="sidebar-tab active" type="button">Chats</button>
       <button id="tab-requests-btn" class="sidebar-tab" type="button">Requests <span id="requests-badge" class="tab-badge" hidden>0</span></button>
+      <button id="tab-mutual-btn" class="sidebar-tab" type="button">Suggested</button>
       <button id="tab-settings-btn" class="sidebar-tab" type="button">Settings</button>
     </div>
     <ul id="peer-list"></ul>
     <ul id="requests-list" hidden></ul>
+    <ul id="mutual-list" hidden></ul>
     <div id="sidebar-footer">
       <div id="add-contact-row" hidden>
         <input id="add-contact-input" placeholder="Paste contact card…" class="full-width">
@@ -589,19 +599,19 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=32"></script>
-<script src="js/scrypt-worker-client.js?v=32"></script>
-<script src="js/storage.js?v=32"></script>
-<script src="js/network.js?v=32"></script>
-<script src="js/auth.js?v=32"></script>
-<script src="js/backup.js?v=32"></script>
-<script src="js/attachments.js?v=32"></script>
-<script src="js/groups.js?v=32"></script>
-<script src="js/calls.js?v=32"></script>
-<script src="js/groupcalls.js?v=32"></script>
-<script src="js/avatars.js?v=32"></script>
-<script src="js/giphy.js?v=32"></script>
-<script src="js/translation.js?v=32"></script>
-<script src="js/app.js?v=32"></script>
+<script src="js/crypto.js?v=33"></script>
+<script src="js/scrypt-worker-client.js?v=33"></script>
+<script src="js/storage.js?v=33"></script>
+<script src="js/network.js?v=33"></script>
+<script src="js/auth.js?v=33"></script>
+<script src="js/backup.js?v=33"></script>
+<script src="js/attachments.js?v=33"></script>
+<script src="js/groups.js?v=33"></script>
+<script src="js/calls.js?v=33"></script>
+<script src="js/groupcalls.js?v=33"></script>
+<script src="js/avatars.js?v=33"></script>
+<script src="js/giphy.js?v=33"></script>
+<script src="js/translation.js?v=33"></script>
+<script src="js/app.js?v=33"></script>
 </body>
 </html>

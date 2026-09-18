@@ -50,6 +50,12 @@ const HavenAuth = (() => {
   class AccountsClient {
     constructor(baseUrl) {
       this.baseUrl = baseUrl.replace(/\/$/, "");
+      this.username = null;
+      // Kept in memory only (never persisted) for the rest of the
+      // session after signup/login so later authenticated calls —
+      // syncContact, mutualFriends — don't need to re-prompt for the
+      // password. Same proof /api/login itself already verified.
+      this._authKeyHex = null;
     }
 
     async usernameAvailable(username) {
@@ -101,6 +107,8 @@ const HavenAuth = (() => {
         const err = await resp.json().catch(() => ({ detail: resp.statusText }));
         throw new Error(err.detail || "Signup failed");
       }
+      this.username = username;
+      this._authKeyHex = H.bytesToHex(pwAuthKey);
       return { identity, recoveryPhrase: phrase, username };
     }
 
@@ -134,6 +142,8 @@ const HavenAuth = (() => {
         body: JSON.stringify({ username, password_auth_key: H.bytesToHex(authKey), identity_pub: H.bytesToHex(identity.publicBytes) }),
       }).catch(() => {});
 
+      this.username = username;
+      this._authKeyHex = H.bytesToHex(authKey);
       return { identity, username };
     }
 
@@ -188,7 +198,47 @@ const HavenAuth = (() => {
       });
       if (!resetResp.ok) throw new Error("Password reset failed.");
       const identity = await H.keyPairFromPrivateBytes(privateBytes);
+      this.username = username;
+      this._authKeyHex = H.bytesToHex(newAuthKey);
       return { identity, username };
+    }
+
+    // Records a newly-mutual contact server-side (see accounts_server.py's
+    // /api/contacts/sync) so it can power mutualFriends() below — called
+    // once per pair, only once a hello/hello_ack handshake has actually
+    // completed (see network.js), never for a one-sided request. A
+    // no-op if this client never logged in this session (e.g. a session
+    // restored straight from a backup file — see backup.js) or the call
+    // fails for any reason; "people you may know" is a nice-to-have, not
+    // something worth surfacing an error for.
+    async syncContact(contactUsername) {
+      if (!this._authKeyHex) return;
+      try {
+        await fetch(`${this.baseUrl}/api/contacts/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: this.username, password_auth_key: this._authKeyHex, contact_username: contactUsername }),
+        });
+      } catch (e) {
+        console.error("syncContact failed:", e);
+      }
+    }
+
+    async mutualFriends() {
+      if (!this._authKeyHex) return [];
+      try {
+        const r = await fetch(`${this.baseUrl}/api/mutual-friends`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: this.username, password_auth_key: this._authKeyHex }),
+        });
+        if (!r.ok) return [];
+        const data = await r.json();
+        return data.results || [];
+      } catch (e) {
+        console.error("mutualFriends failed:", e);
+        return [];
+      }
     }
   }
 

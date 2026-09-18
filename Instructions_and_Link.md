@@ -83,6 +83,21 @@ Only once a request is accepted can either side send a message — this
 is true in both directions, so accepting someone's request is exactly
 as deliberate as sending one.
 
+### Suggested — people you may know
+
+Once you have a contact or two, the **Suggested** tab shows accounts
+that share a mutual contact with you (e.g. a friend of a friend),
+ranked by how many contacts you have in common. It's the same
+invite-based request under the hood — clicking **Request** just sends
+one, same as search does.
+
+![Suggested tab showing a mutual-friend suggestion](docs/screenshots/13-mutual-friends-tab.png)
+
+Note this is the one place Haven's server knows more than a username
+directory: it records *that* two accounts became mutual contacts (never
+what you say to each other) purely to power this suggestion — see
+`webapp/accounts_db.py`'s docstring for the exact trade-off.
+
 ## 6. Chatting
 
 Once you're connected, click their name in the Chats tab to open the

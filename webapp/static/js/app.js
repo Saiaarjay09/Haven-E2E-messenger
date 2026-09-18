@@ -368,6 +368,13 @@
     state.net.onConnect = (conn) => {
       const fp = conn.fingerprint;
       const existing = state.peers.get(fp);
+      // A genuinely new mutual contact (as opposed to an ordinary
+      // reconnect to one we already had) — the one moment this server
+      // is told about an edge in the social graph, purely to power
+      // "people you may know" (see the Mutual Friends tab).
+      if (!existing || existing.status !== "accepted") {
+        if (state.accountsClient) state.accountsClient.syncContact(conn.username);
+      }
       state.peers.set(fp, {
         username: conn.username,
         identityPubHex: H.bytesToHex(conn.identityPub),
@@ -1158,11 +1165,14 @@
   function switchSidebarTab(name) {
     el("tab-chats-btn").classList.toggle("active", name === "chats");
     el("tab-requests-btn").classList.toggle("active", name === "requests");
+    el("tab-mutual-btn").classList.toggle("active", name === "mutual");
     el("tab-settings-btn").classList.toggle("active", name === "settings");
     el("peer-list").hidden = name !== "chats";
     el("sidebar-footer").hidden = name !== "chats";
     el("requests-list").hidden = name !== "requests";
+    el("mutual-list").hidden = name !== "mutual";
     el("settings-panel").hidden = name !== "settings";
+    if (name === "mutual") renderMutualFriends();
   }
 
   // The Requests tab: incoming contact requests (see network.js's
@@ -1220,6 +1230,51 @@
     await state.net.declineContactRequest(fingerprint);
     state.peers.delete(fingerprint);
     renderRequests();
+  }
+
+  // The Suggested tab: "people you may know" — accounts that share a
+  // mutual (accepted) contact with you, from accounts_server.py's
+  // /api/mutual-friends. Fetched fresh each time the tab is opened
+  // rather than cached, since it can change any time one of your
+  // contacts accepts someone new.
+  async function renderMutualFriends() {
+    const list = el("mutual-list");
+    list.innerHTML = "";
+    const loading = document.createElement("div");
+    loading.className = "user-search-note";
+    loading.textContent = "Loading…";
+    list.appendChild(loading);
+
+    const suggestions = state.accountsClient ? await state.accountsClient.mutualFriends() : [];
+    // The tab may have been switched away from while this was in flight.
+    if (el("mutual-list").hidden) return;
+    list.innerHTML = "";
+    if (!suggestions.length) {
+      const note = document.createElement("div");
+      note.className = "user-search-note";
+      note.textContent = "No suggestions yet — they show up once you and a contact both know someone in common.";
+      list.appendChild(note);
+      return;
+    }
+    for (const s of suggestions) {
+      const row = document.createElement("li");
+      row.className = "mutual-row";
+      row.appendChild(avatarElement(s.username, null));
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "mutual-name";
+      nameSpan.textContent = s.username;
+      row.appendChild(nameSpan);
+      const countSpan = document.createElement("span");
+      countSpan.className = "mutual-count";
+      countSpan.textContent = s.mutual_count === 1 ? "1 mutual contact" : `${s.mutual_count} mutual contacts`;
+      row.appendChild(countSpan);
+      const requestBtn = document.createElement("button");
+      requestBtn.className = "primary";
+      requestBtn.textContent = "Request";
+      requestBtn.onclick = () => sendContactRequest(s.username, s.identity_pub);
+      row.appendChild(requestBtn);
+      list.appendChild(row);
+    }
   }
 
   function closeOpenChatView() {
@@ -1860,6 +1915,7 @@
 
     el("tab-chats-btn").onclick = () => switchSidebarTab("chats");
     el("tab-requests-btn").onclick = () => switchSidebarTab("requests");
+    el("tab-mutual-btn").onclick = () => switchSidebarTab("mutual");
     el("tab-settings-btn").onclick = () => switchSidebarTab("settings");
     el("setting-online-status").addEventListener("change", (e) => {
       setSetting("online-status", e.target.checked);
