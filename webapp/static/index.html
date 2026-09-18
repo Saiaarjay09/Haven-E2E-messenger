@@ -32,36 +32,43 @@
      throughout this file. */
   [hidden] { display: none !important; }
 
-  /* Dark theme, iMessage-inspired: near-black surfaces, a single blue
-     accent for anything active/mine, and a neutral gray for everything
-     that belongs to the other person. Every color in this file is one
-     of these variables — no color is hardcoded a second time below, so
-     the whole palette can be re-tuned from here alone. */
+  /* "Private correspondence" theme — deliberately NOT another rounded-
+     bubble iMessage clone. Warm near-black paper, a single brass/ink
+     accent nothing else in messaging uses (no blue, no green), serif
+     type for what people actually wrote (see .msg below), monospace
+     for anything verification-related (safety numbers, relay status,
+     recovery phrases) to read as technical/trustworthy, and message
+     blocks styled like annotated marginalia — a left rule, not a
+     bubble tail. Every color is a variable here; nothing is
+     hardcoded a second time below. */
   :root {
-    --bg: #000000;
-    --bg-elevated: #1c1c1e;
-    --bg-elevated-2: #2c2c2e;
-    --bg-input: #1c1c1e;
-    --border: #2c2c2e;
-    --border-subtle: #242426;
-    --text: #f2f2f7;
-    --text-secondary: #98989d;
-    --text-tertiary: #6e6e73;
-    --accent: #0a84ff;
-    --accent-text: #ffffff;
-    --danger: #ff453a;
-    --success: #32d74b;
-    --bubble-me: #0a84ff;
-    --bubble-me-text: #ffffff;
-    --bubble-them: #3a3a3c;
-    --bubble-them-text: #f2f2f7;
-    --warn-bg: #332a12;
-    --warn-border: #5c4a1c;
-    --ok-bg: #12301c;
-    --ok-border: #235133;
-    --radius-lg: 18px;
-    --radius-md: 12px;
-    --radius-sm: 8px;
+    --bg: #0d0d0c;
+    --bg-elevated: #161513;
+    --bg-elevated-2: #201f1c;
+    --bg-input: #161513;
+    --border: #2b2924;
+    --border-subtle: #201f1c;
+    --text: #f0ebe1;
+    --text-secondary: #a39b8a;
+    --text-tertiary: #726a5c;
+    --accent: #c9974c;
+    --accent-soft: rgba(201, 151, 76, 0.14);
+    --accent-text: #1a1510;
+    --danger: #e5484d;
+    --success: #4caf7d;
+    --bubble-me: var(--accent-soft);
+    --bubble-me-text: var(--text);
+    --bubble-them: var(--bg-elevated-2);
+    --bubble-them-text: var(--text);
+    --warn-bg: #2e2210;
+    --warn-border: #5c4319;
+    --ok-bg: #16281d;
+    --ok-border: #2c4a35;
+    --radius-lg: 6px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+    --font-serif: Georgia, "Times New Roman", Times, serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
 
   * { box-sizing: border-box; }
@@ -73,10 +80,10 @@
     font-family: inherit; font-size: 13px; color: var(--text); background: var(--bg-elevated-2);
     border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer;
   }
-  button:hover { background: #3a3a3c; }
+  button:hover { background: #29271f; border-color: #3a3730; }
   button:active { opacity: 0.8; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  button.primary:hover { background: #3399ff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
+  button.primary:hover { background: #d6a860; border-color: #d6a860; }
   button.danger { color: var(--danger); }
 
   input[type="text"], input[type="password"], input:not([type]), input[type="file"] {
@@ -91,7 +98,7 @@
   .option-list { max-height: 120px; overflow-y: auto; margin-bottom: 6px; font-size: 13px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
   .option-list label { display: block; padding: 3px 0; color: var(--text); }
 
-  #login-screen { max-width: 420px; margin: 60px auto; background: var(--bg-elevated); padding: 28px; border-radius: 16px; border: 1px solid var(--border); }
+  #login-screen { max-width: 420px; margin: 60px auto; background: var(--bg-elevated); padding: 28px; border-radius: var(--radius-md); border: 1px solid var(--border); border-top: 2px solid var(--accent); }
   #login-screen h1 { margin-top: 0; font-size: 26px; letter-spacing: -0.02em; }
   #login-screen label { display: block; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
   #login-screen input { width: 100%; margin-top: 4px; }
@@ -104,28 +111,37 @@
   #sidebar-header b { font-weight: 600; }
   #logout-link { font-size: 12px; float: right; color: var(--text-secondary); text-decoration: none; }
   #logout-link:hover { color: var(--text); }
-  #relay-status { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+  #relay-status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); margin-top: 4px; letter-spacing: 0.02em; }
   #peer-list { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
-  #peer-list li { padding: 10px; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; }
+  #peer-list li {
+    padding: 10px 10px 10px 8px; cursor: pointer; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px;
+  }
   #peer-list li:hover { background: var(--bg-elevated-2); }
-  #peer-list li.selected { background: var(--bg-elevated-2); }
+  #peer-list li.selected { background: var(--bg-elevated-2); border-left-color: var(--accent); }
   #sidebar-footer { padding: 10px; border-top: 1px solid var(--border); }
   #sidebar-footer button { display: block; width: 100%; margin-bottom: 6px; }
 
   #chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
   #chat-header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
   #chat-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-  #safety-number { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  #safety-number { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); margin-top: 4px; letter-spacing: 0.02em; }
   #verify-btn { font-size: 12px; margin-left: 8px; padding: 4px 10px; }
 
   #messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; }
+  /* Marginalia, not bubbles: every message is a sharp-cornered block
+     with a left rule, like an annotated letter — colored for what you
+     sent, neutral for what they sent. The message TEXT itself renders
+     in a serif face (this app's one clear typographic signature),
+     while everything else in the UI stays in the system sans. */
   .msg {
-    position: relative; margin-bottom: 8px; padding: 8px 12px; max-width: 62%;
-    font-size: 15px; line-height: 1.35; word-wrap: break-word;
+    position: relative; margin-bottom: 10px; padding: 9px 14px; max-width: 64%;
+    font-family: var(--font-serif); font-size: 16px; line-height: 1.45; word-wrap: break-word;
+    border-left: 3px solid var(--border-subtle); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   }
-  .msg.me { background: var(--bubble-me); color: var(--bubble-me-text); margin-left: auto; border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg); }
-  .msg.them { background: var(--bubble-them); color: var(--bubble-them-text); margin-right: auto; border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px; }
-  .msg.sys { color: var(--text-tertiary); font-style: italic; background: none; max-width: 100%; text-align: center; font-size: 13px; padding: 4px 0; }
+  .msg.me { background: var(--bubble-me); color: var(--bubble-me-text); margin-left: auto; border-left-color: var(--accent); }
+  .msg.them { background: var(--bubble-them); color: var(--bubble-them-text); margin-right: auto; }
+  .msg.sys { font-family: inherit; color: var(--text-tertiary); font-style: italic; background: none; border: none; max-width: 100%; text-align: center; font-size: 13px; padding: 4px 0; }
   .msg img, .msg video { max-width: 260px; max-height: 260px; border-radius: var(--radius-sm); display: block; }
   .msg audio { display: block; max-width: 260px; }
 
@@ -137,7 +153,7 @@
     border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); cursor: pointer;
   }
   #emoji-btn:hover, #attach-btn:hover, #gif-btn:hover { background: var(--bg-elevated-2); color: var(--text); }
-  #message-input { flex: 1; padding: 9px 12px; border-radius: 18px; }
+  #message-input { flex: 1; padding: 9px 12px; }
   #send-btn { margin-left: 8px; padding: 9px 18px; }
   #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-elevated); max-height: 140px; overflow-y: auto; }
   #emoji-picker.hide { display: none; }
@@ -164,7 +180,7 @@
 
   #recovery-overlay, .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
   #recovery-overlay.hide, .modal-overlay.hide { display: none; }
-  #recovery-box, .modal-box { background: var(--bg-elevated); padding: 22px; border-radius: 16px; max-width: 420px; border: 1px solid var(--border); }
+  #recovery-box, .modal-box { background: var(--bg-elevated); padding: 22px; border-radius: var(--radius-md); max-width: 420px; border: 1px solid var(--border); border-top: 2px solid var(--accent); }
   #recovery-phrase { font-family: ui-monospace, monospace; font-size: 15px; background: var(--bg-input); padding: 10px; border-radius: var(--radius-sm); margin: 10px 0; user-select: all; }
 
   .avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-block; vertical-align: middle; object-fit: cover; background: var(--bg-elevated-2); color: var(--text); text-align: center; line-height: 30px; font-size: 13px; flex: none; }
@@ -215,8 +231,8 @@
   .settings-hint { font-size: 12px; color: var(--text-tertiary); margin: 0 0 14px; }
 
   /* -- read-receipt ticks ---------------------------------------------- */
-  .msg-ticks { font-size: 11px; margin-left: 6px; color: rgba(255,255,255,0.6); }
-  .msg-ticks.seen { color: #cfe8ff; }
+  .msg-ticks { font-family: var(--font-mono); font-size: 11px; margin-left: 6px; color: var(--text-tertiary); }
+  .msg-ticks.seen { color: var(--accent); }
 
   /* -- typing indicator -------------------------------------------------*/
   #typing-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); padding-top: 4px; }
@@ -230,7 +246,7 @@
   /* -- pinned messages bar ---------------------------------------------- */
   #pinned-bar { display: flex; gap: 6px; overflow-x: auto; padding-top: 6px; }
   #pinned-bar.hide { display: none; }
-  .pinned-chip { flex: none; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+  .pinned-chip { flex: none; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
   .pinned-chip .pinned-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pinned-chip .pinned-chip-unpin { flex: none; border: none; background: none; cursor: pointer; color: var(--text-tertiary); font-size: 13px; padding: 0; }
   .msg.pinned { box-shadow: 0 0 0 2px var(--text-tertiary) inset; }
@@ -269,21 +285,30 @@
   .modal-box p { margin: 0 0 16px; font-size: 14px; color: var(--text); line-height: 1.4; white-space: pre-line; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-  /* -- login masthead: a wordmark above the card, not a plain <h1>
-        inside it, the way Instagram/most consumer apps treat their
-        logotype on a sign-in screen. --------------------------------- */
+  /* -- login masthead: a newspaper-nameplate wordmark above the card,
+        not a plain <h1> inside it — with a hairline rule and a small
+        tracked-out tagline underneath, the way a print masthead
+        actually sits above the fold. ----------------------------------- */
   #login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 16px; }
-  #masthead { font-family: Georgia, "Times New Roman", Times, serif; font-style: italic; font-weight: 500; font-size: 56px; letter-spacing: 0.01em; color: var(--text); margin-bottom: 28px; user-select: none; }
+  #masthead-wrap { margin-bottom: 32px; text-align: center; user-select: none; }
+  #masthead { font-family: var(--font-serif); font-style: italic; font-weight: 500; font-size: 56px; letter-spacing: 0.01em; color: var(--text); }
+  #masthead-rule { width: 64px; height: 2px; background: var(--accent); margin: 10px auto; }
+  #masthead-tagline { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-tertiary); }
   #login-screen { margin: 0; }
   @media (max-width: 480px) {
-    #masthead { font-size: 44px; margin-bottom: 20px; }
+    #masthead { font-size: 44px; }
+    #masthead-wrap { margin-bottom: 24px; }
   }
 </style>
 </head>
 <body>
 
 <div id="login-page">
-<div id="masthead">Haven</div>
+<div id="masthead-wrap">
+  <div id="masthead">Haven</div>
+  <div id="masthead-rule"></div>
+  <div id="masthead-tagline">Private correspondence</div>
+</div>
 <div id="login-screen">
   <p class="field-hint">A hosted, end-to-end encrypted chat client. Everything is
   encrypted on this device — the server never sees your password or your messages.</p>
@@ -525,18 +550,18 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=24"></script>
-<script src="js/storage.js?v=24"></script>
-<script src="js/network.js?v=24"></script>
-<script src="js/auth.js?v=24"></script>
-<script src="js/backup.js?v=24"></script>
-<script src="js/attachments.js?v=24"></script>
-<script src="js/groups.js?v=24"></script>
-<script src="js/calls.js?v=24"></script>
-<script src="js/groupcalls.js?v=24"></script>
-<script src="js/avatars.js?v=24"></script>
-<script src="js/giphy.js?v=24"></script>
-<script src="js/translation.js?v=24"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/crypto.js?v=25"></script>
+<script src="js/storage.js?v=25"></script>
+<script src="js/network.js?v=25"></script>
+<script src="js/auth.js?v=25"></script>
+<script src="js/backup.js?v=25"></script>
+<script src="js/attachments.js?v=25"></script>
+<script src="js/groups.js?v=25"></script>
+<script src="js/calls.js?v=25"></script>
+<script src="js/groupcalls.js?v=25"></script>
+<script src="js/avatars.js?v=25"></script>
+<script src="js/giphy.js?v=25"></script>
+<script src="js/translation.js?v=25"></script>
+<script src="js/app.js?v=25"></script>
 </body>
 </html>
