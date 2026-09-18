@@ -133,11 +133,19 @@ const HavenStorage = (() => {
       );
     }
 
-    async saveMessage(fingerprint, direction, plaintext, kind = "text", timestamp = Date.now()) {
+    // Returns the row's local auto-increment id — see network.js's
+    // sendText/_handleMsg, which thread it through to the UI so a
+    // rendered bubble can be found again later (to update its seen-tick,
+    // or to pin/reply-target it). msgIndex is the ratchet envelope index
+    // this plaintext was sent/received at (only meaningful for "out"
+    // messages here — see markSeenUpTo, which uses it as a "read up to"
+    // watermark instead of needing a per-message read-receipt id).
+    async saveMessage(fingerprint, direction, plaintext, kind = "text", timestamp = Date.now(), msgIndex = null) {
       const blob = await H.encryptAuthenticated(this.storageKey, H.utf8(plaintext), H.utf8(fingerprint));
-      await tx(this.db, "messages", "readwrite", (store) => {
-        store.add({ fingerprint, direction, kind, blobHex: H.bytesToHex(blob), timestamp });
-      });
+      const req = await tx(this.db, "messages", "readwrite", (store) =>
+        store.add({ fingerprint, direction, kind, blobHex: H.bytesToHex(blob), timestamp, msgIndex, seen: false, pinned: false })
+      );
+      return req.result;
     }
 
     async history(fingerprint) {
@@ -147,9 +155,91 @@ const HavenStorage = (() => {
       const out = [];
       for (const row of rows) {
         const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(fingerprint));
-        out.push({ direction: row.direction, kind: row.kind, text: H.fromUtf8(plaintext), ts: row.timestamp });
+        out.push({
+          id: row.id,
+          direction: row.direction,
+          kind: row.kind,
+          text: H.fromUtf8(plaintext),
+          ts: row.timestamp,
+          seen: !!row.seen,
+          pinned: !!row.pinned,
+        });
       }
       return out;
+    }
+
+    // Marks every outgoing message with a ratchet index <= upToIndex as
+    // seen — the recipient sends this "read up to" watermark (their
+    // session's recvIndex, see network.js) rather than acking each
+    // message individually, which is simpler and self-healing (one lost
+    // receipt doesn't leave a message stuck "unseen" forever, the next
+    // receipt covers it too).
+    async markSeenUpTo(fingerprint, upToIndex) {
+      return new Promise((resolve, reject) => {
+        const t = this.db.transaction("messages", "readwrite");
+        const req = t.objectStore("messages").index("fingerprint").openCursor(IDBKeyRange.only(fingerprint));
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          const row = cursor.value;
+          if (row.direction === "out" && row.msgIndex != null && row.msgIndex <= upToIndex && !row.seen) {
+            row.seen = true;
+            cursor.update(row);
+          }
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+
+    async setPinned(id, pinned) {
+      return new Promise((resolve, reject) => {
+        const t = this.db.transaction("messages", "readwrite");
+        const store = t.objectStore("messages");
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          const row = getReq.result;
+          if (!row) return;
+          row.pinned = pinned;
+          store.put(row);
+        };
+        getReq.onerror = () => reject(getReq.error);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+
+    // "Clear chat" — wipes this contact's message history but keeps the
+    // contact and its session, so the chat is simply empty afterward
+    // rather than gone. See deleteContact for the more destructive
+    // "delete chat" operation.
+    async clearMessages(fingerprint) {
+      return new Promise((resolve, reject) => {
+        const t = this.db.transaction("messages", "readwrite");
+        const req = t.objectStore("messages").index("fingerprint").openCursor(IDBKeyRange.only(fingerprint));
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          cursor.delete();
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+
+    // "Delete chat" — this is a local, per-device operation (same as
+    // every other privacy setting here): it forgets the contact and its
+    // session on this device only, it does not notify them or affect
+    // their copy of the conversation. If they message you again, a new
+    // session simply gets re-established and they reappear as a contact.
+    async deleteContact(fingerprint) {
+      await this.clearMessages(fingerprint);
+      await tx(this.db, "contacts", "readwrite", (store) => store.delete(fingerprint));
+      await tx(this.db, "sessions", "readwrite", (store) => store.delete(fingerprint));
     }
 
     // Every message across every contact, decrypted — used only for
@@ -191,9 +281,10 @@ const HavenStorage = (() => {
 
     async saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind = "text", timestamp = Date.now()) {
       const blob = await H.encryptAuthenticated(this.storageKey, H.utf8(plaintext), H.utf8(groupId));
-      await tx(this.db, "groupMessages", "readwrite", (store) => {
-        store.add({ groupId, senderIdentityPubHex, kind, blobHex: H.bytesToHex(blob), timestamp });
-      });
+      const req = await tx(this.db, "groupMessages", "readwrite", (store) =>
+        store.add({ groupId, senderIdentityPubHex, kind, blobHex: H.bytesToHex(blob), timestamp, pinned: false })
+      );
+      return req.result;
     }
 
     async groupHistory(groupId) {
@@ -204,13 +295,55 @@ const HavenStorage = (() => {
       for (const row of rows) {
         const plaintext = await H.decryptAuthenticated(this.storageKey, H.hexToBytes(row.blobHex), H.utf8(groupId));
         out.push({
+          id: row.id,
           senderIdentityPubHex: row.senderIdentityPubHex,
           kind: row.kind,
           text: H.fromUtf8(plaintext),
           ts: row.timestamp,
+          pinned: !!row.pinned,
         });
       }
       return out;
+    }
+
+    async setGroupMessagePinned(id, pinned) {
+      return new Promise((resolve, reject) => {
+        const t = this.db.transaction("groupMessages", "readwrite");
+        const store = t.objectStore("groupMessages");
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          const row = getReq.result;
+          if (!row) return;
+          row.pinned = pinned;
+          store.put(row);
+        };
+        getReq.onerror = () => reject(getReq.error);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+
+    async clearGroupMessages(groupId) {
+      return new Promise((resolve, reject) => {
+        const t = this.db.transaction("groupMessages", "readwrite");
+        const req = t.objectStore("groupMessages").index("groupId").openCursor(IDBKeyRange.only(groupId));
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          cursor.delete();
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+
+    // Local-only, same as deleteContact: forgets this group's messages
+    // and membership state on this device without notifying anyone.
+    async deleteGroup(groupId) {
+      await this.clearGroupMessages(groupId);
+      await tx(this.db, "groups", "readwrite", (store) => store.delete(groupId));
     }
   }
 

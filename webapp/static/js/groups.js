@@ -31,7 +31,7 @@ const HavenGroups = (() => {
       this.username = username;
       this.myPubHex = H.bytesToHex(identity.publicBytes);
 
-      this.onGroupMessage = null; // (groupId, senderUsername, text, kind, senderIdentityPubHex) => void
+      this.onGroupMessage = null; // (groupId, senderUsername, text, kind, senderIdentityPubHex, id) => void — id is the local storage row id, or undefined for a GROUP_NON_MESSAGE_KINDS control frame
       this.onGroupUpdate = null; // (groupId) => void
 
       this.groups = new Map(); // groupId -> { name, members: Map(pubHex->username), myChain, peerChains: Map(pubHex->chain), removed }
@@ -140,11 +140,20 @@ const HavenGroups = (() => {
       }
     }
 
+    // GROUP_NON_MESSAGE_KINDS mirrors network.js's NON_MESSAGE_KINDS for
+    // the 1:1 channel — control/transient traffic riding the group
+    // channel that shouldn't be persisted as a chat message.
+    static GROUP_NON_MESSAGE_KINDS = new Set(["group_call", "typing"]);
+
+    // Returns the saved message's local id (see storage.js's
+    // saveGroupMessage), or undefined for a GROUP_NON_MESSAGE_KINDS
+    // control frame that was never persisted.
     async sendGroupMessage(groupId, text, kind = "text") {
       const g = this._requireGroup(groupId);
       const envelope = await g.myChain.encrypt(H.utf8(text), H.utf8(groupId));
       await this._persist(groupId);
-      await this.store.saveGroupMessage(groupId, this.myPubHex, text, kind);
+      const persist = !GroupManager.GROUP_NON_MESSAGE_KINDS.has(kind);
+      const id = persist ? await this.store.saveGroupMessage(groupId, this.myPubHex, text, kind) : undefined;
 
       const payloadJson = JSON.stringify({
         type: "group_msg",
@@ -156,6 +165,15 @@ const HavenGroups = (() => {
         if (pubHex === this.myPubHex) continue;
         await this._sendRaw(pubHex, uname, payloadJson);
       }
+      return id;
+    }
+
+    // Local-only: forgets this group on this device without notifying
+    // anyone (see storage.js's deleteGroup for why — same "delete chat"
+    // semantics as a 1:1 contact).
+    async forgetGroup(groupId) {
+      this.groups.delete(groupId);
+      await this.store.deleteGroup(groupId);
     }
 
     listGroups() {
@@ -249,12 +267,14 @@ const HavenGroups = (() => {
       const kind = payload.kind || "text";
       await this._persist(groupId);
       // "group_call" is call signaling plus a stream of audio/video
-      // chunks (up to ~10/sec) — not something to persist as a group
-      // chat message, same reasoning as 1:1 calls (see network.js).
-      if (kind !== "group_call") await this.store.saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind);
+      // chunks (up to ~10/sec), and "typing" a transient ping — neither
+      // is something to persist as a group chat message, same reasoning
+      // as 1:1 calls (see network.js).
+      const persist = !GroupManager.GROUP_NON_MESSAGE_KINDS.has(kind);
+      const id = persist ? await this.store.saveGroupMessage(groupId, senderIdentityPubHex, plaintext, kind) : undefined;
       if (this.onGroupMessage) {
         const username = g.members.get(senderIdentityPubHex) || senderIdentityPubHex.slice(0, 8);
-        this.onGroupMessage(groupId, username, plaintext, kind, senderIdentityPubHex);
+        this.onGroupMessage(groupId, username, plaintext, kind, senderIdentityPubHex, id);
       }
     }
 

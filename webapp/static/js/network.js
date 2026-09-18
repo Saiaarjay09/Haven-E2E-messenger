@@ -15,7 +15,11 @@ const HavenNetwork = (() => {
 
   // Message kinds that are routing/control traffic riding the 1:1
   // channel, not something to show in a contact's chat transcript.
-  const NON_MESSAGE_KINDS = new Set(["group", "call", "avatar"]);
+  // "read" carries a read-receipt watermark (see getRecvIndex/
+  // markSeenUpTo), "typing" a transient is-typing ping, and "presence"
+  // an explicit online/hidden announcement (see app.js's settings
+  // panel) — none of these are chat messages any more than "avatar" is.
+  const NON_MESSAGE_KINDS = new Set(["group", "call", "avatar", "read", "typing", "presence"]);
 
   class RelayClient {
     constructor(identity, username, wsUrl) {
@@ -93,7 +97,7 @@ const HavenNetwork = (() => {
       this.connections = new Map(); // fingerprint -> {identityPubHex, username, session}
       this._pendingEphemeral = new Map(); // identityPubHex -> ephemeral keypair
 
-      this.onMessage = null; // (fingerprint, kind, text, senderPubHex) => void
+      this.onMessage = null; // (fingerprint, kind, text, senderPubHex, id) => void — id is the local storage row id, or undefined for a NON_MESSAGE_KINDS control frame
       this.onStatus = null; // (fingerprint, status) => void
       this.onConnect = null; // (conn) => void
     }
@@ -105,6 +109,25 @@ const HavenNetwork = (() => {
 
     isConnected(fingerprint) {
       return this.connections.has(fingerprint);
+    }
+
+    // Drops our in-memory session with this contact — used by "delete
+    // chat" (app.js) so a deleted contact's messages stop being
+    // silently decrypted and saved in the background. A NEW session is
+    // simply re-established via hello/hello_ack the next time either
+    // side reconnects, same as with any other not-yet-met contact.
+    disconnect(fingerprint) {
+      this.connections.delete(fingerprint);
+    }
+
+    // The highest ratchet index we've successfully decrypted from this
+    // contact so far — used as the read-receipt watermark (see app.js:
+    // "you've read up through message #N of what they sent you").
+    // recvIndex is "the next index we expect", so recvIndex-1 is the
+    // last one actually received; -1 means nothing's been received yet.
+    getRecvIndex(fingerprint) {
+      const conn = this.connections.get(fingerprint);
+      return conn ? conn.session.recvIndex - 1 : -1;
     }
 
     async connectRelay(identityPubBytes, usernameHint = "") {
@@ -200,10 +223,13 @@ const HavenNetwork = (() => {
       // profile-picture pushes (avatars.js) — none of these belong in
       // this contact's 1:1 chat history, so route them away entirely
       // instead of persisting each one as a "message".
-      if (!NON_MESSAGE_KINDS.has(kind)) await this.store.saveMessage(fp, "in", text, kind);
-      if (this.onMessage) this.onMessage(fp, kind, text, H.bytesToHex(senderIdentityPub));
+      const id = NON_MESSAGE_KINDS.has(kind) ? undefined : await this.store.saveMessage(fp, "in", text, kind);
+      if (this.onMessage) this.onMessage(fp, kind, text, H.bytesToHex(senderIdentityPub), id);
     }
 
+    // Returns the saved message's local id (see storage.js's
+    // saveMessage), or undefined for a NON_MESSAGE_KINDS control frame
+    // that was never persisted.
     async sendText(fingerprint, text, kind = "text") {
       const conn = this.connections.get(fingerprint);
       if (!conn) throw new Error("not connected to this peer");
@@ -216,7 +242,8 @@ const HavenNetwork = (() => {
         ciphertext: H.bytesToHex(envelope.ciphertext),
         kind,
       });
-      if (!NON_MESSAGE_KINDS.has(kind)) await this.store.saveMessage(fingerprint, "out", text, kind);
+      if (NON_MESSAGE_KINDS.has(kind)) return undefined;
+      return this.store.saveMessage(fingerprint, "out", text, kind, undefined, envelope.index);
     }
   }
 

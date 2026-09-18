@@ -115,6 +115,68 @@
     #sidebar-footer button, #entry-row button { min-height: 40px; }
     .msg { max-width: 80%; }
   }
+
+  /* -- sidebar tabs (Chats / Settings) -------------------------------- */
+  #sidebar-tabs { display: flex; border-bottom: 1px solid #eee; }
+  .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: #666; }
+  .sidebar-tab.active { border-bottom-color: #3ea34e; color: #222; font-weight: 600; }
+  #settings-panel { flex: 1; overflow-y: auto; padding: 12px; }
+  .settings-section { margin-bottom: 20px; }
+  .settings-section h3 { margin: 0 0 8px; font-size: 13px; color: #555; text-transform: uppercase; letter-spacing: 0.03em; }
+  .settings-section button { padding: 6px 10px; }
+  .settings-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 4px; cursor: pointer; }
+  .settings-hint { font-size: 12px; color: #888; margin: 0 0 14px; }
+
+  /* -- read-receipt ticks ---------------------------------------------- */
+  .msg-ticks { font-size: 11px; margin-left: 6px; color: #9aa; }
+  .msg-ticks.seen { color: #4faaea; }
+
+  /* -- typing indicator -------------------------------------------------*/
+  #typing-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; margin-top: 4px; }
+  #typing-indicator.hide { display: none; }
+  .typing-dots { display: inline-flex; gap: 2px; }
+  .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: #999; display: inline-block; animation: typing-bounce 1.2s infinite ease-in-out; }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-3px); opacity: 1; } }
+
+  /* -- pinned messages bar ---------------------------------------------- */
+  #pinned-bar { display: flex; gap: 6px; overflow-x: auto; margin-top: 6px; }
+  #pinned-bar.hide { display: none; }
+  .pinned-chip { flex: none; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 8px; background: #fff8dc; border: 1px solid #e0c860; border-radius: 12px; font-size: 12px; cursor: pointer; }
+  .pinned-chip .pinned-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pinned-chip .pinned-chip-unpin { flex: none; border: none; background: none; cursor: pointer; color: #886; font-size: 13px; padding: 0; }
+  .msg.pinned { border-left: 3px solid #e0c860; }
+
+  /* -- per-message menu (web: 3 dots -> reply/pin) ----------------------- */
+  .msg { position: relative; }
+  .msg-menu-btn { position: absolute; top: 2px; right: -22px; background: none; border: none; cursor: pointer; font-size: 14px; color: #999; opacity: 0; padding: 2px 4px; }
+  .msg.me .msg-menu-btn { right: auto; left: -22px; }
+  .msg:hover .msg-menu-btn { opacity: 1; }
+  .msg-menu-popup { position: absolute; top: 20px; right: -22px; z-index: 5; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; flex-direction: column; min-width: 110px; }
+  .msg.me .msg-menu-popup { right: auto; left: -22px; }
+  .msg-menu-popup.hide { display: none; }
+  .msg-menu-popup button { background: none; border: none; text-align: left; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  .msg-menu-popup button:hover { background: #f0f0f0; }
+  #chat-menu-wrap { position: relative; display: inline-block; margin-left: 6px; }
+  #chat-menu-btn { background: none; border: none; cursor: pointer; font-size: 16px; color: #666; padding: 0 4px; }
+  #chat-menu-wrap .msg-menu-popup { top: 22px; right: 0; left: auto; }
+
+  /* -- reply preview (quoted message inside a bubble) --------------------- */
+  .msg-reply-quote { border-left: 3px solid #999; padding: 2px 8px; margin-bottom: 4px; font-size: 12px; color: #666; background: rgba(0,0,0,0.03); border-radius: 3px; }
+  .msg-reply-quote .msg-reply-sender { font-weight: 600; }
+
+  /* -- reply compose bar above entry-row ---------------------------------- */
+  #reply-preview-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #f0f0f0; border-top: 1px solid #ddd; font-size: 13px; }
+  #reply-preview-row.hide { display: none; }
+  #reply-preview-label { font-weight: 600; color: #3ea34e; font-size: 12px; }
+  #reply-preview-snippet { color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+  #reply-preview-cancel { background: none; border: none; cursor: pointer; font-size: 14px; color: #888; }
+
+  /* -- swipe-to-reply (mobile touch drag) ---------------------------------- */
+  .msg-swipe-wrap { position: relative; touch-action: pan-y; }
+  .msg-swipe-icon { position: absolute; top: 50%; left: -28px; transform: translateY(-50%); opacity: 0; font-size: 15px; }
+  .msg.me .msg-swipe-icon { left: auto; right: -28px; }
 </style>
 </head>
 <body>
@@ -176,18 +238,12 @@
       <a href="#" id="logout-link" style="font-size:12px; float:right;">Log out</a>
       <div id="relay-status" style="font-size:12px;color:#666;">Relay: connecting…</div>
     </div>
+    <div id="sidebar-tabs">
+      <button id="tab-chats-btn" class="sidebar-tab active" type="button">💬 Chats</button>
+      <button id="tab-settings-btn" class="sidebar-tab" type="button">⚙️ Settings</button>
+    </div>
     <ul id="peer-list"></ul>
     <div id="sidebar-footer">
-      <div id="add-contact-row" hidden>
-        <input id="add-contact-input" placeholder="Paste contact card…" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
-        <button id="add-contact-confirm">Add</button>
-        <button id="add-contact-cancel">Cancel</button>
-      </div>
-      <button id="add-contact-btn">Add contact…</button>
-      <div id="my-card-row" hidden>
-        <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
-      </div>
-      <button id="my-card-btn">My contact card</button>
       <input id="avatar-file" type="file" accept="image/*" hidden>
       <button id="set-avatar-btn">Set avatar…</button>
       <div id="backup-row" hidden>
@@ -204,12 +260,54 @@
       </div>
       <button id="new-group-btn">New group…</button>
     </div>
+    <div id="settings-panel" hidden>
+      <div class="settings-section">
+        <h3>Add a contact</h3>
+        <div id="add-contact-row" hidden>
+          <input id="add-contact-input" placeholder="Paste contact card…" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+          <button id="add-contact-confirm">Add</button>
+          <button id="add-contact-cancel">Cancel</button>
+        </div>
+        <button id="add-contact-btn">Add contact…</button>
+      </div>
+      <div class="settings-section">
+        <h3>My contact card</h3>
+        <div id="my-card-row" hidden>
+          <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+        </div>
+        <button id="my-card-btn">Show my contact card</button>
+      </div>
+      <div class="settings-section">
+        <h3>Privacy</h3>
+        <label class="settings-toggle">
+          <input type="checkbox" id="setting-online-status" checked>
+          Share online status
+        </label>
+        <p class="settings-hint">When off, contacts always see you as offline, even while connected.</p>
+        <label class="settings-toggle">
+          <input type="checkbox" id="setting-read-receipts" checked>
+          Send read receipts
+        </label>
+        <p class="settings-hint">When off, your contacts won't see a "seen" mark on messages you've read.</p>
+      </div>
+    </div>
   </div>
   <div id="chat-area">
     <div id="chat-header">
       <button id="back-to-list-btn" type="button">← Back</button>
-      <div id="chat-title"><span id="chat-title-avatar"></span><span id="chat-title-text">Select a contact</span></div>
+      <div id="chat-title">
+        <span id="chat-title-avatar"></span><span id="chat-title-text">Select a contact</span>
+        <div id="chat-menu-wrap" hidden>
+          <button id="chat-menu-btn" type="button" title="Chat options">⋮</button>
+          <div id="chat-menu-popup" class="msg-menu-popup hide">
+            <button id="chat-clear-btn" type="button">Clear chat</button>
+            <button id="chat-delete-btn" type="button">Delete chat</button>
+          </div>
+        </div>
+      </div>
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
+      <div id="typing-indicator" class="hide"><span id="typing-indicator-text"></span> <span class="typing-dots"><span></span><span></span><span></span></span></div>
+      <div id="pinned-bar" class="hide"></div>
       <div id="call-controls" hidden style="margin-top:4px;">
         <button id="call-voice-btn">📞 Call</button>
         <button id="call-video-btn">📹 Video call</button>
@@ -261,6 +359,13 @@
       <input id="gif-search" placeholder="Search Giphy…">
       <div id="gif-results"></div>
     </div>
+    <div id="reply-preview-row" class="hide">
+      <div id="reply-preview-body">
+        <div id="reply-preview-label"></div>
+        <div id="reply-preview-snippet"></div>
+      </div>
+      <button id="reply-preview-cancel" type="button" title="Cancel reply">✕</button>
+    </div>
     <div id="entry-row">
       <button id="emoji-btn" type="button" title="Emoji">😀</button>
       <button id="gif-btn" type="button" title="GIF">GIF</button>
@@ -288,18 +393,18 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=20"></script>
-<script src="js/storage.js?v=20"></script>
-<script src="js/network.js?v=20"></script>
-<script src="js/auth.js?v=20"></script>
-<script src="js/backup.js?v=20"></script>
-<script src="js/attachments.js?v=20"></script>
-<script src="js/groups.js?v=20"></script>
-<script src="js/calls.js?v=20"></script>
-<script src="js/groupcalls.js?v=20"></script>
-<script src="js/avatars.js?v=20"></script>
-<script src="js/giphy.js?v=20"></script>
-<script src="js/translation.js?v=20"></script>
-<script src="js/app.js?v=20"></script>
+<script src="js/crypto.js?v=22"></script>
+<script src="js/storage.js?v=22"></script>
+<script src="js/network.js?v=22"></script>
+<script src="js/auth.js?v=22"></script>
+<script src="js/backup.js?v=22"></script>
+<script src="js/attachments.js?v=22"></script>
+<script src="js/groups.js?v=22"></script>
+<script src="js/calls.js?v=22"></script>
+<script src="js/groupcalls.js?v=22"></script>
+<script src="js/avatars.js?v=22"></script>
+<script src="js/giphy.js?v=22"></script>
+<script src="js/translation.js?v=22"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>

@@ -18,12 +18,33 @@
     groupManager: null,
     callManager: null,
     peers: new Map(), // fingerprint -> {username, identityPubHex}
+    peerPresence: new Map(), // fingerprint -> "online" | "hidden" — see settings' online-status toggle
     openFingerprint: null,
     openGroupId: null,
+    replyTarget: null, // {id, who, senderName, kind, text} of the message being replied to, or null
     translationBuffers: new Map(), // "1:1:<fp>" | "group:<groupId>:<pubHex>" -> HavenTranslation.SpeakerBuffer
   };
 
   const el = (id) => document.getElementById(id);
+
+  // Per-account local settings (privacy toggles) — same localStorage
+  // pattern as myAvatarKey(), namespaced per username since one browser
+  // profile can be used for more than one account over time.
+  function getSetting(name, def) {
+    try {
+      const raw = localStorage.getItem(`haven-setting-${name}:${state.username}`);
+      return raw === null ? def : raw === "true";
+    } catch (e) {
+      return def;
+    }
+  }
+  function setSetting(name, value) {
+    try {
+      localStorage.setItem(`haven-setting-${name}:${state.username}`, String(value));
+    } catch (e) {
+      /* ignore (private/incognito mode) */
+    }
+  }
 
   // Hardcoded to this specific deployment (Tailscale Funnel, see
   // WEB_DEPLOYMENT.md Option C1) rather than derived from location.* —
@@ -180,13 +201,18 @@
     state.store = await HavenStorage.Store.open(username, identity.privateBytes);
     state.net = new HavenNetwork.NetworkManager(identity, username, state.store);
     state.groupManager = await HavenGroups.GroupManager.create(state.net, state.store, identity, username);
-    state.groupManager.onGroupMessage = (groupId, senderUsername, text, kind, senderPubHex) => {
+    state.groupManager.onGroupMessage = (groupId, senderUsername, text, kind, senderPubHex, id) => {
       if (kind === "group_call") {
         state.groupCallManager.handleIncoming(groupId, senderPubHex, senderUsername, text);
         return;
       }
+      if (kind === "typing") {
+        if (groupId === state.openGroupId && senderUsername !== state.username) showTypingIndicator(senderUsername);
+        return;
+      }
       if (state.openGroupId === groupId) {
-        appendLine(senderUsername === state.username ? "me" : "them", text, kind, senderUsername);
+        const isMe = senderUsername === state.username;
+        appendLine(isMe ? "me" : "them", text, kind, { id, context: "group", senderLabel: isMe ? null : senderUsername });
       }
       refreshPeerList();
     };
@@ -255,7 +281,7 @@
       const buf = getTranslationBuffer(`1:1:${fp}`, (text, language) => appendCaption("call-captions", name, text, language));
       if (buf) buf.push(int16);
     };
-    state.net.onMessage = (fp, kind, text, senderPubHex) => {
+    state.net.onMessage = (fp, kind, text, senderPubHex, id) => {
       if (kind === "group") {
         state.groupManager.handleIncoming(senderPubHex, text);
         return;
@@ -268,7 +294,40 @@
         handleIncomingAvatar(fp, text);
         return;
       }
-      if (fp === state.openFingerprint) appendLine("them", text, kind);
+      if (kind === "presence") {
+        try {
+          state.peerPresence.set(fp, JSON.parse(text).status);
+        } catch (e) {
+          /* ignore malformed presence frame */
+        }
+        refreshPeerList();
+        return;
+      }
+      if (kind === "read") {
+        let upTo = -1;
+        try {
+          upTo = JSON.parse(text).upTo;
+        } catch (e) {
+          /* ignore malformed read-receipt frame */
+        }
+        if (typeof upTo === "number" && upTo >= 0) {
+          state.store.markSeenUpTo(fp, upTo).then(() => {
+            if (fp === state.openFingerprint) renderMessagesFor({ type: "chat", fingerprint: fp });
+          });
+        }
+        return;
+      }
+      if (kind === "typing") {
+        if (fp === state.openFingerprint) {
+          const meta = state.peers.get(fp);
+          showTypingIndicator(meta ? meta.username : "Someone");
+        }
+        return;
+      }
+      if (fp === state.openFingerprint) {
+        appendLine("them", text, kind, { id, context: "chat" });
+        sendReadReceiptIfNeeded(fp);
+      }
       refreshPeerList();
     };
     state.net.onConnect = (conn) => {
@@ -282,6 +341,7 @@
       refreshPeerList();
       if (fp === state.openFingerprint) renderChatHeaderAvatar(fp);
       sendMyAvatarTo(fp).catch((e) => console.error("send avatar failed:", e));
+      sendPresenceTo(fp).catch((e) => console.error("send presence failed:", e));
     };
     state.net.onStatus = () => refreshPeerList();
 
@@ -301,6 +361,8 @@
     el("my-username").textContent = state.username;
     saveSession(username, identity.privateBytes);
     renderMyAvatar();
+    el("setting-online-status").checked = getSetting("online-status", true);
+    el("setting-read-receipts").checked = getSetting("read-receipts", true);
   }
 
   // "Stay signed in" support: the decrypted identity key is cached in
@@ -370,7 +432,12 @@
     list.innerHTML = "";
     for (const [fp, meta] of state.peers.entries()) {
       const li = document.createElement("li");
-      const online = state.net.isConnected(fp);
+      // A contact can be technically connected but have told us (via a
+      // "presence" frame) they'd rather appear offline — see the
+      // Settings tab's "Share online status" toggle, the local half of
+      // this same mechanism.
+      const presence = state.peerPresence.get(fp) || "online";
+      const online = state.net.isConnected(fp) && presence !== "hidden";
       li.appendChild(avatarElement(meta.username, meta.avatarDataUrl));
       li.appendChild(document.createTextNode(`${meta.username} (${online ? "online" : "offline"})`));
       li.dataset.fp = fp;
@@ -546,10 +613,13 @@
     state.openGroupId = groupId;
     state.openFingerprint = null;
     document.body.classList.add("chat-open");
+    hideTypingIndicator();
+    clearReplyTarget();
     el("safety-number").textContent = "";
     el("verify-btn").hidden = true;
     el("group-add-member-row").hidden = true;
     el("call-controls").hidden = true;
+    el("chat-menu-wrap").hidden = false;
     el("incoming-call-banner").classList.add("hide");
     el("active-call-panel").classList.add("hide");
     el("incoming-group-call-banner").classList.add("hide");
@@ -562,24 +632,19 @@
     el("chat-title-avatar").innerHTML = "";
     refreshPeerList();
     renderGroupHeader(groupId);
-
-    const g = state.groupManager.listGroups().find((x) => x.groupId === groupId);
-    const messages = el("messages");
-    messages.innerHTML = "";
-    for (const m of await state.groupManager.groupHistory(groupId)) {
-      const isMe = m.senderIdentityPubHex === state.groupManager.myPubHex;
-      const senderLabel = isMe ? null : g.members.get(m.senderIdentityPubHex) || "unknown";
-      appendLine(isMe ? "me" : "them", m.text, m.kind, senderLabel);
-    }
+    await renderMessagesFor({ type: "group", groupId });
   }
 
   async function openChat(fingerprint) {
     state.openFingerprint = fingerprint;
     state.openGroupId = null;
     document.body.classList.add("chat-open");
+    hideTypingIndicator();
+    clearReplyTarget();
     el("group-controls").hidden = true;
     el("group-add-member-row").hidden = true;
     el("call-controls").hidden = false;
+    el("chat-menu-wrap").hidden = false;
     el("incoming-call-banner").classList.add("hide");
     el("active-call-panel").classList.add("hide");
     const meta = state.peers.get(fingerprint);
@@ -601,11 +666,7 @@
       }
     };
 
-    const messages = el("messages");
-    messages.innerHTML = "";
-    for (const m of await state.store.history(fingerprint)) {
-      appendLine(m.direction === "out" ? "me" : "them", m.text, m.kind);
-    }
+    await renderMessagesFor({ type: "chat", fingerprint });
     if (!state.net.isConnected(fingerprint) && meta) {
       try {
         await state.net.connectRelay(H.hexToBytes(meta.identityPubHex), meta.username);
@@ -614,6 +675,7 @@
         appendLine("sys", "Could not reach relay: " + e.message);
       }
     }
+    await sendReadReceiptIfNeeded(fingerprint);
   }
 
   // Mobile layout only (see the @media block in index.html) — desktop
@@ -623,29 +685,207 @@
     document.body.classList.remove("chat-open");
   }
 
-  function appendLine(who, text, kind = "text", senderLabel = null) {
+  // A short, human label for a message — used for reply quotes and the
+  // pinned-messages bar, neither of which want to try to render a whole
+  // attachment inline. kind="reply" recurses into the ORIGINAL kind a
+  // reply payload wraps (see the "reply" branch in appendLine below),
+  // so quoting a reply-to-a-reply still shows real content, not "[object]".
+  function snippetForKind(kind, text) {
+    if (kind === "reply") {
+      try {
+        const p = JSON.parse(text);
+        return snippetForKind(p.origKind || "text", p.body);
+      } catch (e) {
+        return "message";
+      }
+    }
+    if (kind === "image") return "📷 Photo";
+    if (kind === "gif") return "GIF";
+    if (kind === "audio") return "🎤 Voice message";
+    if (kind === "video") return "🎥 Video";
+    if (kind !== "text") return "📎 Attachment";
+    return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  }
+
+  function setReplyTarget(info) {
+    // info: {id, who, senderName, kind, text} — kind/text are the
+    // ORIGINAL (still-wrapped-if-reply) values, so quoting a reply
+    // works the same way snippetForKind's recursion does.
+    state.replyTarget = info;
+    el("reply-preview-label").textContent = "Replying to " + (info.who === "me" ? "yourself" : info.senderName || "them");
+    el("reply-preview-snippet").textContent = snippetForKind(info.kind, info.text);
+    el("reply-preview-row").classList.remove("hide");
+  }
+
+  function clearReplyTarget() {
+    state.replyTarget = null;
+    el("reply-preview-row").classList.add("hide");
+  }
+
+  function closeAllMsgMenus() {
+    document.querySelectorAll(".msg-menu-popup").forEach((p) => p.classList.add("hide"));
+  }
+
+  async function togglePin(info) {
+    // info.id belongs to whichever chat is currently open — pin/unpin
+    // is only ever triggered from a menu on a message that's on screen.
+    if (state.openFingerprint) {
+      await state.store.setPinned(info.id, !info.pinned);
+      await renderMessagesFor({ type: "chat", fingerprint: state.openFingerprint });
+    } else if (state.openGroupId) {
+      await state.store.setGroupMessagePinned(info.id, !info.pinned);
+      await renderMessagesFor({ type: "group", groupId: state.openGroupId });
+    }
+  }
+
+  // Wires up the web 3-dot menu (reply/pin) and the mobile swipe-to-
+  // reply gesture on a rendered message bubble. Skipped for "sys" lines
+  // and for anything that was never persisted (id undefined — a
+  // NON_MESSAGE_KINDS control frame slipping through would have nothing
+  // to reply-to or pin).
+  function attachMsgInteractions(div, info) {
+    if (info.who === "sys" || info.id === undefined) return;
+    div.dataset.msgId = String(info.id);
+
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "msg-menu-btn";
+    menuBtn.title = "Message options";
+    menuBtn.textContent = "⋮";
+
+    const popup = document.createElement("div");
+    popup.className = "msg-menu-popup hide";
+
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.textContent = "Reply";
+    replyBtn.onclick = (e) => {
+      e.stopPropagation();
+      popup.classList.add("hide");
+      setReplyTarget({ id: info.id, who: info.who, senderName: info.senderLabel, kind: info.kind, text: info.text });
+      el("message-input").focus();
+    };
+
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.textContent = info.pinned ? "Unpin" : "Pin";
+    pinBtn.onclick = async (e) => {
+      e.stopPropagation();
+      popup.classList.add("hide");
+      await togglePin(info);
+    };
+
+    popup.appendChild(replyBtn);
+    popup.appendChild(pinBtn);
+    menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      const wasHidden = popup.classList.contains("hide");
+      closeAllMsgMenus();
+      if (wasHidden) popup.classList.remove("hide");
+    };
+    div.appendChild(menuBtn);
+    div.appendChild(popup);
+
+    // Swipe-to-reply: touch-only (mouse users get the 3-dot menu above).
+    // Tracks a horizontal drag and, past a threshold on release, sets
+    // the same reply target the menu's Reply button does.
+    let startX = null;
+    let dx = 0;
+    div.addEventListener(
+      "touchstart",
+      (e) => {
+        startX = e.touches[0].clientX;
+        dx = 0;
+      },
+      { passive: true }
+    );
+    div.addEventListener(
+      "touchmove",
+      (e) => {
+        if (startX === null) return;
+        dx = Math.max(0, Math.min(70, e.touches[0].clientX - startX));
+        div.style.transform = dx ? `translateX(${dx}px)` : "";
+      },
+      { passive: true }
+    );
+    div.addEventListener("touchend", () => {
+      if (dx > 50) {
+        setReplyTarget({ id: info.id, who: info.who, senderName: info.senderLabel, kind: info.kind, text: info.text });
+      }
+      div.style.transform = "";
+      startX = null;
+      dx = 0;
+    });
+  }
+
+  function appendLine(who, text, kind = "text", opts = {}) {
     const div = document.createElement("div");
-    div.className = "msg " + who;
+    div.className = "msg " + who + (opts.pinned ? " pinned" : "");
+    const senderLabel = opts.senderLabel || null;
     const prefix = who === "me" ? "you: " : who === "them" ? (senderLabel ? senderLabel + ": " : "") : "* ";
-    if (kind === "text") {
-      div.textContent = prefix + text;
+
+    // The REAL username behind this bubble, regardless of who's looking
+    // at it — used for reply targets/quotes, which travel over the wire
+    // to the other side and so can't bake in a viewer-relative "You"
+    // (see the quote rendering below, which does that localization at
+    // display time instead, once per viewer).
+    const resolvedSenderName =
+      who === "me" ? state.username : senderLabel || (state.peers.get(state.openFingerprint) || {}).username || "them";
+
+    // kind="reply" wraps an original message (of ANY kind, including
+    // another reply, or an attachment) with a quoted snippet of what
+    // it's replying to — see sendMessage/sendAttachment for how it's
+    // built. Unwrap it here so the body renders exactly like a normal
+    // message of its original kind, just with a quote box on top.
+    let bodyKind = kind;
+    let bodyText = text;
+    let replyQuote = null;
+    if (kind === "reply") {
+      try {
+        const parsed = JSON.parse(text);
+        bodyText = parsed.body;
+        bodyKind = parsed.origKind || "text";
+        replyQuote = { sender: parsed.rSender, snippet: parsed.rSnippet };
+      } catch (e) {
+        bodyText = text;
+        bodyKind = "text";
+      }
+    }
+
+    if (replyQuote) {
+      const quote = document.createElement("div");
+      quote.className = "msg-reply-quote";
+      const senderSpan = document.createElement("span");
+      senderSpan.className = "msg-reply-sender";
+      // replyQuote.sender is always the real username (see
+      // applyReplyTarget) — "You" only ever applies to THIS viewer's
+      // own messages, so it's resolved here rather than baked into the
+      // payload, where it would be wrong for whichever side didn't send it.
+      senderSpan.textContent = (replyQuote.sender === state.username ? "You" : replyQuote.sender) + ": ";
+      quote.appendChild(senderSpan);
+      quote.appendChild(document.createTextNode(replyQuote.snippet));
+      div.appendChild(quote);
+    }
+
+    if (bodyKind === "text") {
+      div.appendChild(document.createTextNode(prefix + bodyText));
     } else {
       try {
-        const payload = HavenAttachments.decodeAttachment(text);
+        const payload = HavenAttachments.decodeAttachment(bodyText);
         if (prefix) div.appendChild(document.createTextNode(prefix));
         let media;
-        if (kind === "image" || kind === "gif") {
+        if (bodyKind === "image" || bodyKind === "gif") {
           media = document.createElement("img");
-          media.src = HavenAttachments.attachmentDataUrl(text);
+          media.src = HavenAttachments.attachmentDataUrl(bodyText);
           media.alt = payload.filename;
-        } else if (kind === "audio") {
+        } else if (bodyKind === "audio") {
           media = document.createElement("audio");
           media.controls = true;
-          media.src = HavenAttachments.attachmentDataUrl(text);
-        } else if (kind === "video") {
+          media.src = HavenAttachments.attachmentDataUrl(bodyText);
+        } else if (bodyKind === "video") {
           media = document.createElement("video");
           media.controls = true;
-          media.src = HavenAttachments.attachmentDataUrl(text);
+          media.src = HavenAttachments.attachmentDataUrl(bodyText);
         } else {
           const blob = new Blob([payload.data], { type: payload.mime });
           media = document.createElement("a");
@@ -655,11 +895,206 @@
         }
         div.appendChild(media);
       } catch (e) {
-        div.textContent = prefix + "[unreadable attachment]";
+        div.appendChild(document.createTextNode(prefix + "[unreadable attachment]"));
       }
     }
+
+    // Read-receipt ticks only ever apply to my own outgoing 1:1
+    // messages — group chats don't track per-message seen state (see
+    // groups.js's module docstring: no per-recipient delivery tracking
+    // exists there), and an incoming message obviously has nothing of
+    // MINE for the other side to have seen.
+    if (who === "me" && opts.context === "chat") {
+      const ticks = document.createElement("span");
+      ticks.className = "msg-ticks" + (opts.seen ? " seen" : "");
+      ticks.textContent = opts.seen ? "✓✓" : "✓";
+      div.appendChild(ticks);
+    }
+
     el("messages").appendChild(div);
     el("messages").scrollTop = el("messages").scrollHeight;
+
+    if (who !== "sys") {
+      attachMsgInteractions(div, { id: opts.id, who, kind, text, senderLabel: resolvedSenderName, pinned: !!opts.pinned });
+    }
+    return div;
+  }
+
+  // Re-renders the entire message pane for whichever chat/group is
+  // currently open, from persisted storage — used for the initial open
+  // AND to refresh ticks/pins after something changes them out from
+  // under the currently-visible messages (a read receipt arriving, a
+  // pin toggled, a chat cleared).
+  async function renderMessagesFor(ctx) {
+    el("messages").innerHTML = "";
+    let rows;
+    let context;
+    if (ctx.type === "chat") {
+      rows = (await state.store.history(ctx.fingerprint)).map((m) => ({
+        who: m.direction === "out" ? "me" : "them",
+        text: m.text,
+        kind: m.kind,
+        id: m.id,
+        seen: m.seen,
+        pinned: m.pinned,
+        senderLabel: null,
+      }));
+      context = "chat";
+    } else {
+      const g = state.groupManager.listGroups().find((x) => x.groupId === ctx.groupId);
+      rows = (await state.groupManager.groupHistory(ctx.groupId)).map((m) => {
+        const isMe = m.senderIdentityPubHex === state.groupManager.myPubHex;
+        return {
+          who: isMe ? "me" : "them",
+          text: m.text,
+          kind: m.kind,
+          id: m.id,
+          pinned: m.pinned,
+          senderLabel: isMe ? null : (g && g.members.get(m.senderIdentityPubHex)) || "unknown",
+        };
+      });
+      context = "group";
+    }
+    for (const row of rows) appendLine(row.who, row.text, row.kind, { ...row, context });
+    renderPinnedBar(rows.filter((r) => r.pinned));
+  }
+
+  function renderPinnedBar(pinnedRows) {
+    const bar = el("pinned-bar");
+    bar.innerHTML = "";
+    if (!pinnedRows.length) {
+      bar.classList.add("hide");
+      return;
+    }
+    bar.classList.remove("hide");
+    for (const row of pinnedRows) {
+      const chip = document.createElement("div");
+      chip.className = "pinned-chip";
+      const text = document.createElement("span");
+      text.className = "pinned-chip-text";
+      text.textContent = "📌 " + snippetForKind(row.kind, row.text);
+      text.onclick = () => {
+        const target = document.querySelector(`.msg[data-msg-id="${row.id}"]`);
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.style.outline = "2px solid #e0c860";
+        setTimeout(() => (target.style.outline = ""), 1200);
+      };
+      const unpinBtn = document.createElement("button");
+      unpinBtn.className = "pinned-chip-unpin";
+      unpinBtn.title = "Unpin";
+      unpinBtn.textContent = "✕";
+      unpinBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await togglePin(row);
+      };
+      chip.appendChild(text);
+      chip.appendChild(unpinBtn);
+      bar.appendChild(chip);
+    }
+  }
+
+  async function sendReadReceiptIfNeeded(fingerprint) {
+    if (!getSetting("read-receipts", true)) return;
+    if (!state.net.isConnected(fingerprint)) return;
+    const upTo = state.net.getRecvIndex(fingerprint);
+    if (upTo < 0) return;
+    try {
+      await state.net.sendText(fingerprint, JSON.stringify({ upTo }), "read");
+    } catch (e) {
+      console.error("read receipt failed:", e);
+    }
+  }
+
+  async function sendPresenceTo(fingerprint) {
+    const status = getSetting("online-status", true) ? "online" : "hidden";
+    await state.net.sendText(fingerprint, JSON.stringify({ status }), "presence");
+  }
+
+  let typingHideTimer = null;
+  function showTypingIndicator(name) {
+    el("typing-indicator-text").textContent = `${name} is typing`;
+    el("typing-indicator").classList.remove("hide");
+    clearTimeout(typingHideTimer);
+    typingHideTimer = setTimeout(() => el("typing-indicator").classList.add("hide"), 3000);
+  }
+  function hideTypingIndicator() {
+    clearTimeout(typingHideTimer);
+    el("typing-indicator").classList.add("hide");
+  }
+
+  let lastTypingPingAt = 0;
+  function maybeSendTypingPing() {
+    const now = Date.now();
+    if (now - lastTypingPingAt < 2500) return;
+    lastTypingPingAt = now;
+    if (state.openFingerprint) {
+      if (state.net.isConnected(state.openFingerprint)) {
+        state.net.sendText(state.openFingerprint, "", "typing").catch(() => {});
+      }
+    } else if (state.openGroupId) {
+      state.groupManager.sendGroupMessage(state.openGroupId, "", "typing").catch(() => {});
+    }
+  }
+
+  function switchSidebarTab(name) {
+    const chats = name === "chats";
+    el("tab-chats-btn").classList.toggle("active", chats);
+    el("tab-settings-btn").classList.toggle("active", !chats);
+    el("peer-list").hidden = !chats;
+    el("sidebar-footer").hidden = !chats;
+    el("settings-panel").hidden = chats;
+  }
+
+  function closeOpenChatView() {
+    el("messages").innerHTML = "";
+    el("chat-title-text").textContent = "Select a contact";
+    el("chat-title-avatar").innerHTML = "";
+    el("chat-menu-wrap").hidden = true;
+    el("pinned-bar").classList.add("hide");
+    el("safety-number").textContent = "";
+    el("verify-btn").hidden = true;
+    el("group-controls").hidden = true;
+    el("call-controls").hidden = true;
+    hideTypingIndicator();
+    clearReplyTarget();
+  }
+
+  async function doClearChat() {
+    el("chat-menu-popup").classList.add("hide");
+    if (state.openFingerprint) {
+      if (!confirm("Clear all messages in this chat? This can't be undone.")) return;
+      await state.store.clearMessages(state.openFingerprint);
+      await renderMessagesFor({ type: "chat", fingerprint: state.openFingerprint });
+    } else if (state.openGroupId) {
+      if (!confirm("Clear all messages in this chat? This can't be undone.")) return;
+      await state.store.clearGroupMessages(state.openGroupId);
+      await renderMessagesFor({ type: "group", groupId: state.openGroupId });
+    }
+  }
+
+  // Both branches are local-only (see storage.js's deleteContact /
+  // groups.js's forgetGroup): nothing is sent to the other side. They
+  // just stop appearing as a contact/group on THIS device; if they
+  // message you again, a 1:1 contact simply reappears via a fresh
+  // session handshake.
+  async function doDeleteChat() {
+    el("chat-menu-popup").classList.add("hide");
+    if (state.openFingerprint) {
+      if (!confirm("Delete this chat? This removes the contact and all messages from this device.")) return;
+      const fp = state.openFingerprint;
+      await state.store.deleteContact(fp);
+      state.peers.delete(fp);
+      state.net.disconnect(fp);
+      state.openFingerprint = null;
+      closeOpenChatView();
+    } else if (state.openGroupId) {
+      if (!confirm("Delete this chat? This removes the group and all messages from this device.")) return;
+      await state.groupManager.forgetGroup(state.openGroupId);
+      state.openGroupId = null;
+      closeOpenChatView();
+    }
+    refreshPeerList();
   }
 
   function getTranslationBuffer(key, onCaption) {
@@ -887,19 +1322,43 @@
     return true;
   }
 
+  // Wraps `body`/`kind` in a kind="reply" envelope quoting state.replyTarget,
+  // if one is set — shared by sendMessage and sendAttachment so replying
+  // works the same way whether you're replying WITH text or an attachment
+  // (you can reply to anything, but see snippetForKind for how each
+  // original kind gets quoted).
+  function applyReplyTarget(body, kind) {
+    const reply = state.replyTarget;
+    if (!reply) return { body, kind };
+    return {
+      kind: "reply",
+      body: JSON.stringify({
+        body,
+        origKind: kind,
+        // Always the real username (see appendLine's resolvedSenderName)
+        // — "You" is never sent over the wire, only shown to whichever
+        // viewer it's actually true for, at render time.
+        rSender: reply.senderName || "them",
+        rSnippet: snippetForKind(reply.kind, reply.text),
+      }),
+    };
+  }
+
   async function sendMessage() {
     const text = el("message-input").value.trim();
     if (!text || (!state.openFingerprint && !state.openGroupId)) return;
     el("message-input").value = "";
+    const wrapped = applyReplyTarget(text, "text");
+    clearReplyTarget();
     if (state.openGroupId) {
-      await state.groupManager.sendGroupMessage(state.openGroupId, text);
-      appendLine("me", text);
+      const id = await state.groupManager.sendGroupMessage(state.openGroupId, wrapped.body, wrapped.kind);
+      appendLine("me", wrapped.body, wrapped.kind, { id, context: "group" });
       return;
     }
     if (!(await ensureConnected(state.openFingerprint))) return;
     try {
-      await state.net.sendText(state.openFingerprint, text);
-      appendLine("me", text);
+      const id = await state.net.sendText(state.openFingerprint, wrapped.body, wrapped.kind);
+      appendLine("me", wrapped.body, wrapped.kind, { id, context: "chat", seen: false });
     } catch (e) {
       console.error("sendText failed:", e);
       appendLine("sys", "Send failed: " + e.message);
@@ -916,15 +1375,17 @@
       appendLine("sys", "Attachment failed: " + e.message);
       return;
     }
+    const wrapped = applyReplyTarget(envelope, kind);
+    clearReplyTarget();
     if (state.openGroupId) {
-      await state.groupManager.sendGroupMessage(state.openGroupId, envelope, kind);
-      appendLine("me", envelope, kind);
+      const id = await state.groupManager.sendGroupMessage(state.openGroupId, wrapped.body, wrapped.kind);
+      appendLine("me", wrapped.body, wrapped.kind, { id, context: "group" });
       return;
     }
     if (!(await ensureConnected(state.openFingerprint))) return;
     try {
-      await state.net.sendText(state.openFingerprint, envelope, kind);
-      appendLine("me", envelope, kind);
+      const id = await state.net.sendText(state.openFingerprint, wrapped.body, wrapped.kind);
+      appendLine("me", wrapped.body, wrapped.kind, { id, context: "chat", seen: false });
     } catch (e) {
       console.error("sendAttachment failed:", e);
       appendLine("sys", "Send failed: " + e.message);
@@ -1135,5 +1596,34 @@
     });
     el("gif-btn").onclick = toggleGifPicker;
     el("gif-search").addEventListener("input", onGifSearchInput);
+
+    el("tab-chats-btn").onclick = () => switchSidebarTab("chats");
+    el("tab-settings-btn").onclick = () => switchSidebarTab("settings");
+    el("setting-online-status").addEventListener("change", (e) => {
+      setSetting("online-status", e.target.checked);
+      for (const fp of state.peers.keys()) {
+        sendPresenceTo(fp).catch((err) => console.error("send presence failed:", err));
+      }
+    });
+    el("setting-read-receipts").addEventListener("change", (e) => setSetting("read-receipts", e.target.checked));
+
+    el("chat-menu-btn").onclick = (e) => {
+      e.stopPropagation();
+      const popup = el("chat-menu-popup");
+      const wasHidden = popup.classList.contains("hide");
+      closeAllMsgMenus();
+      popup.classList.toggle("hide", !wasHidden);
+    };
+    el("chat-clear-btn").onclick = doClearChat;
+    el("chat-delete-btn").onclick = doDeleteChat;
+    document.addEventListener("click", () => {
+      closeAllMsgMenus();
+      el("chat-menu-popup").classList.add("hide");
+    });
+
+    el("reply-preview-cancel").onclick = clearReplyTarget;
+    el("message-input").addEventListener("input", () => {
+      if (el("message-input").value) maybeSendTypingPing();
+    });
   });
 })();
