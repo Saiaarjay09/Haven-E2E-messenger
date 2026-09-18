@@ -223,7 +223,7 @@
     state.groupCallManager = new HavenGroupCalls.GroupCallManager(state.groupManager);
     state.groupCallManager.onIncomingGroupCall = (groupId, fromUsername, hasVideo) => {
       if (groupId !== state.openGroupId) return; // known limitation: same as 1:1 calls, only surfaces for the open chat
-      el("incoming-group-call-text").textContent = `📞 ${fromUsername} started a${hasVideo ? " video" : ""} group call`;
+      el("incoming-group-call-text").textContent = `${fromUsername} started a${hasVideo ? " video" : ""} group call`;
       el("incoming-group-call-banner").classList.remove("hide");
     };
     state.groupCallManager.onCallState = (groupId, callState) => {
@@ -249,7 +249,7 @@
     state.callManager.onIncomingCall = (fp, callId, hasVideo) => {
       if (fp !== state.openFingerprint) return; // known limitation: calls only surface for the currently-open chat
       const meta = state.peers.get(fp);
-      el("incoming-call-text").textContent = `📞 Incoming ${hasVideo ? "video " : ""}call from ${meta ? meta.username : fp}`;
+      el("incoming-call-text").textContent = `Incoming ${hasVideo ? "video " : ""}call from ${meta ? meta.username : fp}`;
       el("incoming-call-banner").classList.remove("hide");
     };
     state.callManager.onCallState = (fp, callState) => {
@@ -572,7 +572,7 @@
     const name = el("new-group-name").value.trim();
     const checked = Array.from(el("new-group-members").querySelectorAll("input:checked"));
     if (!name || checked.length === 0) {
-      return alert("Enter a group name and pick at least one member.");
+      return showAlert("Enter a group name and pick at least one member.");
     }
     const members = checked.map((cb) => ({ username: cb.dataset.username, identityPubHex: cb.value }));
     el("new-group-row").hidden = true;
@@ -660,7 +660,11 @@
     el("safety-number").textContent = "Safety number: " + fingerprint + (contact && contact.verified ? "  ✓ verified" : "");
     el("verify-btn").hidden = false;
     el("verify-btn").onclick = async () => {
-      if (confirm(`Safety number:\n\n${fingerprint}\n\nDoes this match what your contact sees for you?`)) {
+      const matches = await showConfirm(`Safety number:\n\n${fingerprint}\n\nDoes this match what your contact sees for you?`, {
+        okLabel: "It matches",
+        cancelLabel: "Not yet",
+      });
+      if (matches) {
         await state.store.setVerified(fingerprint, true);
         el("safety-number").textContent = "Safety number: " + fingerprint + "  ✓ verified";
       }
@@ -699,12 +703,57 @@
         return "message";
       }
     }
-    if (kind === "image") return "📷 Photo";
+    if (kind === "image") return "Photo";
     if (kind === "gif") return "GIF";
-    if (kind === "audio") return "🎤 Voice message";
-    if (kind === "video") return "🎥 Video";
-    if (kind !== "text") return "📎 Attachment";
+    if (kind === "audio") return "Voice message";
+    if (kind === "video") return "Video";
+    if (kind !== "text") return "Attachment";
     return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  }
+
+  // Replaces window.confirm/alert everywhere in this app. Two real
+  // reasons, not just a style preference: native dialogs are silently
+  // a no-op in an iOS "Add to Home Screen" web app (exactly how this
+  // app is meant to be used day to day) — window.confirm() just
+  // returns without ever showing anything, which is why "Clear chat"/
+  // "Delete chat" could look broken — and a browser-chrome dialog box
+  // clashes with a custom-themed UI anyway.
+  function showConfirm(message, { okLabel = "OK", cancelLabel = "Cancel", danger = false } = {}) {
+    return new Promise((resolve) => {
+      el("confirm-message").textContent = message;
+      const okBtn = el("confirm-ok-btn");
+      const cancelBtn = el("confirm-cancel-btn");
+      okBtn.textContent = okLabel;
+      okBtn.className = danger ? "danger" : "primary";
+      cancelBtn.hidden = false;
+      cancelBtn.textContent = cancelLabel;
+      el("confirm-overlay").classList.remove("hide");
+      const cleanup = (result) => {
+        el("confirm-overlay").classList.add("hide");
+        okBtn.onclick = null;
+        cancelBtn.onclick = null;
+        resolve(result);
+      };
+      okBtn.onclick = () => cleanup(true);
+      cancelBtn.onclick = () => cleanup(false);
+    });
+  }
+
+  function showAlert(message) {
+    return new Promise((resolve) => {
+      el("confirm-message").textContent = message;
+      const okBtn = el("confirm-ok-btn");
+      const cancelBtn = el("confirm-cancel-btn");
+      okBtn.textContent = "OK";
+      okBtn.className = "primary";
+      cancelBtn.hidden = true;
+      el("confirm-overlay").classList.remove("hide");
+      okBtn.onclick = () => {
+        el("confirm-overlay").classList.add("hide");
+        okBtn.onclick = null;
+        resolve();
+      };
+    });
   }
 
   function setReplyTarget(info) {
@@ -972,7 +1021,7 @@
       chip.className = "pinned-chip";
       const text = document.createElement("span");
       text.className = "pinned-chip-text";
-      text.textContent = "📌 " + snippetForKind(row.kind, row.text);
+      text.textContent = snippetForKind(row.kind, row.text);
       text.onclick = () => {
         const target = document.querySelector(`.msg[data-msg-id="${row.id}"]`);
         if (!target) return;
@@ -1062,12 +1111,12 @@
 
   async function doClearChat() {
     el("chat-menu-popup").classList.add("hide");
+    const ok = await showConfirm("Clear all messages in this chat? This can't be undone.", { okLabel: "Clear", danger: true });
+    if (!ok) return;
     if (state.openFingerprint) {
-      if (!confirm("Clear all messages in this chat? This can't be undone.")) return;
       await state.store.clearMessages(state.openFingerprint);
       await renderMessagesFor({ type: "chat", fingerprint: state.openFingerprint });
     } else if (state.openGroupId) {
-      if (!confirm("Clear all messages in this chat? This can't be undone.")) return;
       await state.store.clearGroupMessages(state.openGroupId);
       await renderMessagesFor({ type: "group", groupId: state.openGroupId });
     }
@@ -1081,7 +1130,11 @@
   async function doDeleteChat() {
     el("chat-menu-popup").classList.add("hide");
     if (state.openFingerprint) {
-      if (!confirm("Delete this chat? This removes the contact and all messages from this device.")) return;
+      const ok = await showConfirm("Delete this chat? This removes the contact and all messages from this device.", {
+        okLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
       const fp = state.openFingerprint;
       await state.store.deleteContact(fp);
       state.peers.delete(fp);
@@ -1089,7 +1142,11 @@
       state.openFingerprint = null;
       closeOpenChatView();
     } else if (state.openGroupId) {
-      if (!confirm("Delete this chat? This removes the group and all messages from this device.")) return;
+      const ok = await showConfirm("Delete this chat? This removes the group and all messages from this device.", {
+        okLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
       await state.groupManager.forgetGroup(state.openGroupId);
       state.openGroupId = null;
       closeOpenChatView();

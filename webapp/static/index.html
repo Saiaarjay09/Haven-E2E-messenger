@@ -31,79 +31,157 @@
      here restores the behavior `el(...).hidden = true` actually implies
      throughout this file. */
   [hidden] { display: none !important; }
-  body { font-family: -apple-system, sans-serif; margin: 0; background: #f5f5f5; }
-  #login-screen { max-width: 420px; margin: 60px auto; background: white; padding: 24px; border-radius: 8px; }
-  #login-screen h1 { margin-top: 0; }
-  #login-screen label { display: block; margin-top: 10px; font-size: 13px; color: #555; }
-  #login-screen input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 2px; }
-  #login-screen button { margin-top: 14px; margin-right: 8px; padding: 6px 14px; }
-  #login-status { color: #b00; margin-top: 10px; min-height: 1.2em; }
+
+  /* Dark theme, iMessage-inspired: near-black surfaces, a single blue
+     accent for anything active/mine, and a neutral gray for everything
+     that belongs to the other person. Every color in this file is one
+     of these variables — no color is hardcoded a second time below, so
+     the whole palette can be re-tuned from here alone. */
+  :root {
+    --bg: #000000;
+    --bg-elevated: #1c1c1e;
+    --bg-elevated-2: #2c2c2e;
+    --bg-input: #1c1c1e;
+    --border: #2c2c2e;
+    --border-subtle: #242426;
+    --text: #f2f2f7;
+    --text-secondary: #98989d;
+    --text-tertiary: #6e6e73;
+    --accent: #0a84ff;
+    --accent-text: #ffffff;
+    --danger: #ff453a;
+    --success: #32d74b;
+    --bubble-me: #0a84ff;
+    --bubble-me-text: #ffffff;
+    --bubble-them: #3a3a3c;
+    --bubble-them-text: #f2f2f7;
+    --warn-bg: #332a12;
+    --warn-border: #5c4a1c;
+    --ok-bg: #12301c;
+    --ok-border: #235133;
+    --radius-lg: 18px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  a { color: var(--accent); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  button {
+    font-family: inherit; font-size: 13px; color: var(--text); background: var(--bg-elevated-2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; cursor: pointer;
+  }
+  button:hover { background: #3a3a3c; }
+  button:active { opacity: 0.8; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.primary:hover { background: #3399ff; }
+  button.danger { color: var(--danger); }
+
+  input[type="text"], input[type="password"], input:not([type]), input[type="file"] {
+    font-family: inherit; font-size: 14px; color: var(--text); background: var(--bg-input);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+  }
+  input::placeholder { color: var(--text-tertiary); }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  .field-hint { color: var(--text-secondary); font-size: 13px; }
+  .full-width { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
+  .option-list { max-height: 120px; overflow-y: auto; margin-bottom: 6px; font-size: 13px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
+  .option-list label { display: block; padding: 3px 0; color: var(--text); }
+
+  #login-screen { max-width: 420px; margin: 60px auto; background: var(--bg-elevated); padding: 28px; border-radius: 16px; border: 1px solid var(--border); }
+  #login-screen h1 { margin-top: 0; font-size: 26px; letter-spacing: -0.02em; }
+  #login-screen label { display: block; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+  #login-screen input { width: 100%; margin-top: 4px; }
+  #login-screen button { margin-top: 16px; margin-right: 8px; padding: 9px 16px; }
+  #login-status { color: var(--danger); margin-top: 10px; min-height: 1.2em; font-size: 13px; }
 
   #app-screen { display: flex; height: 100vh; }
-  #sidebar { width: 240px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-  #sidebar-header { padding: 10px; border-bottom: 1px solid #eee; }
-  #peer-list { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
-  #peer-list li { padding: 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
-  #peer-list li.selected { background: #e8f0fe; }
-  #sidebar-footer { padding: 10px; border-top: 1px solid #eee; }
-  #sidebar-footer button { display: block; width: 100%; margin-bottom: 6px; padding: 6px; }
+  #sidebar { width: 260px; background: var(--bg-elevated); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  #sidebar-header { padding: 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  #sidebar-header b { font-weight: 600; }
+  #logout-link { font-size: 12px; float: right; color: var(--text-secondary); text-decoration: none; }
+  #logout-link:hover { color: var(--text); }
+  #relay-status { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+  #peer-list { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
+  #peer-list li { padding: 10px; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; }
+  #peer-list li:hover { background: var(--bg-elevated-2); }
+  #peer-list li.selected { background: var(--bg-elevated-2); }
+  #sidebar-footer { padding: 10px; border-top: 1px solid var(--border); }
+  #sidebar-footer button { display: block; width: 100%; margin-bottom: 6px; }
 
-  #chat-area { flex: 1; display: flex; flex-direction: column; }
-  #chat-header { padding: 12px; border-bottom: 1px solid #ddd; background: #fff; }
-  #chat-title { font-weight: bold; }
-  #safety-number { font-size: 12px; color: #666; margin-top: 4px; }
-  #verify-btn { font-size: 12px; margin-left: 8px; }
-  #messages { flex: 1; overflow-y: auto; padding: 12px; }
-  .msg { margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; max-width: 60%; }
-  .msg.me { background: #d1e7dd; margin-left: auto; }
-  .msg.them { background: #fff; border: 1px solid #ddd; }
-  .msg.sys { color: #888; font-style: italic; background: none; max-width: 100%; }
-  .msg img, .msg video { max-width: 260px; max-height: 260px; border-radius: 4px; display: block; }
+  #chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
+  #chat-header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+  #chat-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  #safety-number { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  #verify-btn { font-size: 12px; margin-left: 8px; padding: 4px 10px; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; }
+  .msg {
+    position: relative; margin-bottom: 8px; padding: 8px 12px; max-width: 62%;
+    font-size: 15px; line-height: 1.35; word-wrap: break-word;
+  }
+  .msg.me { background: var(--bubble-me); color: var(--bubble-me-text); margin-left: auto; border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg); }
+  .msg.them { background: var(--bubble-them); color: var(--bubble-them-text); margin-right: auto; border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px; }
+  .msg.sys { color: var(--text-tertiary); font-style: italic; background: none; max-width: 100%; text-align: center; font-size: 13px; padding: 4px 0; }
+  .msg img, .msg video { max-width: 260px; max-height: 260px; border-radius: var(--radius-sm); display: block; }
   .msg audio { display: block; max-width: 260px; }
-  #entry-row { display: flex; align-items: center; padding: 10px; border-top: 1px solid #ddd; background: #fff; }
-  #emoji-btn, #attach-btn { flex: none; margin-right: 6px; padding: 6px 8px; font-size: 16px; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
-  #message-input { flex: 1; padding: 8px; }
-  #send-btn { margin-left: 8px; padding: 8px 16px; }
-  #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 140px; overflow-y: auto; }
+
+  #typing-indicator, #pinned-bar { padding: 0 16px; }
+  #reply-preview-row { padding: 8px 16px; }
+  #entry-row { display: flex; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-elevated); }
+  #emoji-btn, #attach-btn, #gif-btn {
+    flex: none; margin-right: 6px; padding: 6px 10px; font-size: 13px; background: none;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); cursor: pointer;
+  }
+  #emoji-btn:hover, #attach-btn:hover, #gif-btn:hover { background: var(--bg-elevated-2); color: var(--text); }
+  #message-input { flex: 1; padding: 9px 12px; border-radius: 18px; }
+  #send-btn { margin-left: 8px; padding: 9px 18px; }
+  #emoji-picker { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-elevated); max-height: 140px; overflow-y: auto; }
   #emoji-picker.hide { display: none; }
+  #emoji-picker button { font-size: 18px; padding: 4px; background: none; border: none; cursor: pointer; border-radius: var(--radius-sm); }
+  #emoji-picker button:hover { background: var(--bg-elevated-2); }
+
   #incoming-call-banner.hide, #active-call-panel.hide { display: none; }
   #incoming-group-call-banner.hide, #active-group-call-panel.hide { display: none; }
-  .captions-box { margin-top: 8px; padding: 8px; background: #fffbe6; border: 1px solid #e6d68a; border-radius: 4px; font-size: 13px; max-height: 120px; overflow-y: auto; }
+  .banner { margin-top: 8px; padding: 10px; border-radius: var(--radius-md); font-size: 13px; }
+  .banner.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+  .banner.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+  .banner button { margin-top: 6px; }
+
+  .captions-box { margin-top: 8px; padding: 8px; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; max-height: 120px; overflow-y: auto; }
   .captions-box.hide { display: none; }
   .captions-box .caption-line { margin-bottom: 4px; }
   .captions-box .caption-line b { font-weight: 600; }
-  .captions-box .caption-lang { color: #886; font-size: 11px; }
-  .participant-tile { display: flex; flex-direction: column; align-items: center; width: 80px; padding: 6px; border-radius: 6px; border: 2px solid transparent; }
-  .participant-tile.speaking { border-color: #3ea34e; background: #d9f0dd; }
+  .captions-box .caption-lang { color: var(--text-tertiary); font-size: 11px; }
+  .participant-tile { display: flex; flex-direction: column; align-items: center; width: 80px; padding: 6px; border-radius: var(--radius-sm); border: 2px solid transparent; }
+  .participant-tile.speaking { border-color: var(--success); background: var(--ok-bg); }
   .participant-tile .avatar { width: 40px; height: 40px; font-size: 18px; line-height: 40px; }
-  .participant-tile img.participant-video { width: 72px; height: 54px; object-fit: cover; border-radius: 4px; margin-top: 4px; }
-  .participant-tile .participant-name { font-size: 11px; margin-top: 4px; text-align: center; word-break: break-word; }
-  #emoji-picker button { font-size: 18px; padding: 4px; background: none; border: none; cursor: pointer; border-radius: 4px; }
-  #emoji-picker button:hover { background: #eee; }
+  .participant-tile img.participant-video { width: 72px; height: 54px; object-fit: cover; border-radius: var(--radius-sm); margin-top: 4px; }
+  .participant-tile .participant-name { font-size: 11px; margin-top: 4px; text-align: center; word-break: break-word; color: var(--text-secondary); }
 
-  #recovery-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
-  #recovery-overlay.hide { display: none; }
-  #recovery-box { background: #fff; padding: 20px; border-radius: 8px; max-width: 420px; }
-  #recovery-phrase { font-family: monospace; font-size: 15px; background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 10px 0; user-select: all; }
+  #recovery-overlay, .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+  #recovery-overlay.hide, .modal-overlay.hide { display: none; }
+  #recovery-box, .modal-box { background: var(--bg-elevated); padding: 22px; border-radius: 16px; max-width: 420px; border: 1px solid var(--border); }
+  #recovery-phrase { font-family: ui-monospace, monospace; font-size: 15px; background: var(--bg-input); padding: 10px; border-radius: var(--radius-sm); margin: 10px 0; user-select: all; }
 
-  .avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-block; vertical-align: middle; object-fit: cover; background: #ccc; color: #fff; text-align: center; line-height: 28px; font-size: 13px; flex: none; }
-  #peer-list li { display: flex; align-items: center; gap: 8px; }
-  #chat-title { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-block; vertical-align: middle; object-fit: cover; background: var(--bg-elevated-2); color: var(--text); text-align: center; line-height: 30px; font-size: 13px; flex: none; }
 
   #back-to-list-btn { display: none; margin-right: 8px; padding: 6px 10px; }
-  #gif-btn { flex: none; margin-right: 6px; padding: 6px 8px; font-size: 13px; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
-  #gif-picker { display: none; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid #ddd; background: #fafafa; max-height: 260px; overflow-y: auto; }
+  #gif-picker { display: none; flex-direction: column; gap: 6px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-elevated); max-height: 260px; overflow-y: auto; }
   #gif-picker.show { display: flex; }
-  #gif-search { width: 100%; box-sizing: border-box; padding: 6px; }
+  #gif-search { width: 100%; }
   #gif-results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  #gif-results img { width: 100%; border-radius: 4px; cursor: pointer; }
+  #gif-results img { width: 100%; border-radius: var(--radius-sm); cursor: pointer; }
 
   /* Mobile layout: below this width, show either the contact list or
      the open chat full-screen (never both squeezed side by side), the
      same pattern every mobile messaging app uses. Toggled by adding
      .chat-open to <body> when a chat/group is opened (see app.js). */
   @media (max-width: 700px) {
-    #login-screen { max-width: 100%; margin: 0; border-radius: 0; min-height: 100vh; box-sizing: border-box; }
+    #login-screen { max-width: 100%; margin: 0; border-radius: 0; min-height: 100vh; }
     #app-screen { flex-direction: column; }
     #sidebar { width: 100%; }
     #chat-area { display: none; }
@@ -117,83 +195,87 @@
   }
 
   /* -- sidebar tabs (Chats / Settings) -------------------------------- */
-  #sidebar-tabs { display: flex; border-bottom: 1px solid #eee; }
-  .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: #666; }
-  .sidebar-tab.active { border-bottom-color: #3ea34e; color: #222; font-weight: 600; }
-  #settings-panel { flex: 1; overflow-y: auto; padding: 12px; }
-  .settings-section { margin-bottom: 20px; }
-  .settings-section h3 { margin: 0 0 8px; font-size: 13px; color: #555; text-transform: uppercase; letter-spacing: 0.03em; }
-  .settings-section button { padding: 6px 10px; }
-  .settings-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 4px; cursor: pointer; }
-  .settings-hint { font-size: 12px; color: #888; margin: 0 0 14px; }
+  #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .sidebar-tab { flex: 1; padding: 10px 4px; background: none; border: none; border-radius: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+  .sidebar-tab:hover { background: var(--bg-elevated-2); }
+  .sidebar-tab.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+  #settings-panel { flex: 1; overflow-y: auto; padding: 14px; }
+  .settings-section { margin-bottom: 22px; }
+  .settings-section h3 { margin: 0 0 10px; font-size: 12px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .settings-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 4px; cursor: pointer; color: var(--text); }
+  .settings-hint { font-size: 12px; color: var(--text-tertiary); margin: 0 0 14px; }
 
   /* -- read-receipt ticks ---------------------------------------------- */
-  .msg-ticks { font-size: 11px; margin-left: 6px; color: #9aa; }
-  .msg-ticks.seen { color: #4faaea; }
+  .msg-ticks { font-size: 11px; margin-left: 6px; color: rgba(255,255,255,0.6); }
+  .msg-ticks.seen { color: #cfe8ff; }
 
   /* -- typing indicator -------------------------------------------------*/
-  #typing-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; margin-top: 4px; }
+  #typing-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); padding-top: 4px; }
   #typing-indicator.hide { display: none; }
   .typing-dots { display: inline-flex; gap: 2px; }
-  .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: #999; display: inline-block; animation: typing-bounce 1.2s infinite ease-in-out; }
+  .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--text-tertiary); display: inline-block; animation: typing-bounce 1.2s infinite ease-in-out; }
   .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
   .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-3px); opacity: 1; } }
 
   /* -- pinned messages bar ---------------------------------------------- */
-  #pinned-bar { display: flex; gap: 6px; overflow-x: auto; margin-top: 6px; }
+  #pinned-bar { display: flex; gap: 6px; overflow-x: auto; padding-top: 6px; }
   #pinned-bar.hide { display: none; }
-  .pinned-chip { flex: none; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 8px; background: #fff8dc; border: 1px solid #e0c860; border-radius: 12px; font-size: 12px; cursor: pointer; }
+  .pinned-chip { flex: none; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 10px; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
   .pinned-chip .pinned-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pinned-chip .pinned-chip-unpin { flex: none; border: none; background: none; cursor: pointer; color: #886; font-size: 13px; padding: 0; }
-  .msg.pinned { border-left: 3px solid #e0c860; }
+  .pinned-chip .pinned-chip-unpin { flex: none; border: none; background: none; cursor: pointer; color: var(--text-tertiary); font-size: 13px; padding: 0; }
+  .msg.pinned { box-shadow: 0 0 0 2px var(--text-tertiary) inset; }
 
   /* -- per-message menu (web: 3 dots -> reply/pin) ----------------------- */
-  .msg { position: relative; }
-  .msg-menu-btn { position: absolute; top: 2px; right: -22px; background: none; border: none; cursor: pointer; font-size: 14px; color: #999; opacity: 0; padding: 2px 4px; }
-  .msg.me .msg-menu-btn { right: auto; left: -22px; }
+  .msg-menu-btn { position: absolute; top: 2px; right: -26px; background: none; border: none; cursor: pointer; font-size: 15px; color: var(--text-tertiary); opacity: 0; padding: 2px 4px; }
+  .msg.me .msg-menu-btn { right: auto; left: -26px; }
   .msg:hover .msg-menu-btn { opacity: 1; }
-  .msg-menu-popup { position: absolute; top: 20px; right: -22px; z-index: 5; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; flex-direction: column; min-width: 110px; }
-  .msg.me .msg-menu-popup { right: auto; left: -22px; }
+  .msg-menu-popup { position: absolute; top: 22px; right: -26px; z-index: 5; background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.4); display: flex; flex-direction: column; min-width: 120px; overflow: hidden; }
+  .msg.me .msg-menu-popup { right: auto; left: -26px; }
   .msg-menu-popup.hide { display: none; }
-  .msg-menu-popup button { background: none; border: none; text-align: left; padding: 7px 12px; font-size: 13px; cursor: pointer; }
-  .msg-menu-popup button:hover { background: #f0f0f0; }
+  .msg-menu-popup button { background: none; border: none; border-radius: 0; text-align: left; padding: 8px 12px; font-size: 13px; cursor: pointer; color: var(--text); }
+  .msg-menu-popup button:hover { background: var(--bg-elevated); }
   #chat-menu-wrap { position: relative; display: inline-block; margin-left: 6px; }
-  #chat-menu-btn { background: none; border: none; cursor: pointer; font-size: 16px; color: #666; padding: 0 4px; }
-  #chat-menu-wrap .msg-menu-popup { top: 22px; right: 0; left: auto; }
+  #chat-menu-btn { background: none; border: none; cursor: pointer; font-size: 17px; color: var(--text-secondary); padding: 0 4px; }
+  #chat-menu-wrap .msg-menu-popup { top: 24px; right: 0; left: auto; }
 
   /* -- reply preview (quoted message inside a bubble) --------------------- */
-  .msg-reply-quote { border-left: 3px solid #999; padding: 2px 8px; margin-bottom: 4px; font-size: 12px; color: #666; background: rgba(0,0,0,0.03); border-radius: 3px; }
+  .msg-reply-quote { border-left: 3px solid rgba(255,255,255,0.4); padding: 2px 8px; margin-bottom: 4px; font-size: 12px; opacity: 0.85; border-radius: 3px; }
   .msg-reply-quote .msg-reply-sender { font-weight: 600; }
 
   /* -- reply compose bar above entry-row ---------------------------------- */
-  #reply-preview-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #f0f0f0; border-top: 1px solid #ddd; font-size: 13px; }
+  #reply-preview-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-elevated); border-top: 1px solid var(--border); font-size: 13px; }
   #reply-preview-row.hide { display: none; }
-  #reply-preview-label { font-weight: 600; color: #3ea34e; font-size: 12px; }
-  #reply-preview-snippet { color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
-  #reply-preview-cancel { background: none; border: none; cursor: pointer; font-size: 14px; color: #888; }
+  #reply-preview-label { font-weight: 600; color: var(--accent); font-size: 12px; }
+  #reply-preview-snippet { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+  #reply-preview-cancel { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--text-secondary); }
 
   /* -- swipe-to-reply (mobile touch drag) ---------------------------------- */
-  .msg-swipe-wrap { position: relative; touch-action: pan-y; }
   .msg-swipe-icon { position: absolute; top: 50%; left: -28px; transform: translateY(-50%); opacity: 0; font-size: 15px; }
   .msg.me .msg-swipe-icon { left: auto; right: -28px; }
+
+  /* -- custom confirm modal (replaces window.confirm/alert — native
+        dialogs don't fire at all in an iOS "Add to Home Screen" PWA,
+        which is exactly how this app is meant to be used) ------------- */
+  .modal-box p { margin: 0 0 16px; font-size: 14px; color: var(--text); line-height: 1.4; white-space: pre-line; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>
 </head>
 <body>
 
 <div id="login-screen">
   <h1>Haven</h1>
-  <p style="color:#666; font-size:13px;">A hosted, end-to-end encrypted chat client. Everything is
+  <p class="field-hint">A hosted, end-to-end encrypted chat client. Everything is
   encrypted on this device — the server never sees your password or your messages.</p>
   <label>Username</label>
   <input id="username" autocomplete="username">
   <label>Password</label>
   <input id="password" type="password" autocomplete="current-password">
   <div>
-    <button id="login-btn">Log in</button>
+    <button id="login-btn" class="primary">Log in</button>
     <button id="signup-btn">Create account</button>
   </div>
-  <p style="margin-top:10px;">
+  <p style="margin-top:14px;">
     <a href="#" id="forgot-password-link" style="font-size:13px;">Forgot password?</a>
     &nbsp;·&nbsp;
     <a href="#" id="restore-backup-link" style="font-size:13px;">Restore from backup file…</a>
@@ -202,21 +284,21 @@
 
   <div id="forgot-password-row" hidden>
     <hr>
-    <p style="font-size:13px;color:#555;">Enter the username above, plus the 12-word recovery phrase you
+    <p class="field-hint">Enter the username above, plus the 12-word recovery phrase you
     were shown when you created the account, to set a new password.</p>
     <label>Recovery phrase</label>
     <input id="recovery-phrase-input" placeholder="12 words, separated by spaces">
     <label>New password</label>
     <input id="new-password-input" type="password" autocomplete="new-password">
     <div>
-      <button id="reset-password-btn">Reset password</button>
+      <button id="reset-password-btn" class="primary">Reset password</button>
       <button id="forgot-password-cancel">Cancel</button>
     </div>
   </div>
 
   <div id="restore-backup-row" hidden>
     <hr>
-    <p style="font-size:13px;color:#555;">Restore your contacts and message history from a backup file
+    <p class="field-hint">Restore your contacts and message history from a backup file
     downloaded earlier (see "Backup…" once logged in). This works entirely offline and doesn't touch
     your account password — use "Forgot password?" separately if you also need that.</p>
     <label>Backup file</label>
@@ -224,7 +306,7 @@
     <label>Backup password</label>
     <input id="restore-backup-password" type="password">
     <div>
-      <button id="restore-backup-confirm">Restore</button>
+      <button id="restore-backup-confirm" class="primary">Restore</button>
       <button id="restore-backup-cancel">Cancel</button>
     </div>
   </div>
@@ -235,27 +317,27 @@
     <div id="sidebar-header">
       <img id="my-avatar" class="avatar" hidden>
       Signed in as <b id="my-username"></b>
-      <a href="#" id="logout-link" style="font-size:12px; float:right;">Log out</a>
-      <div id="relay-status" style="font-size:12px;color:#666;">Relay: connecting…</div>
+      <a href="#" id="logout-link">Log out</a>
+      <div id="relay-status">Relay: connecting…</div>
     </div>
     <div id="sidebar-tabs">
-      <button id="tab-chats-btn" class="sidebar-tab active" type="button">💬 Chats</button>
-      <button id="tab-settings-btn" class="sidebar-tab" type="button">⚙️ Settings</button>
+      <button id="tab-chats-btn" class="sidebar-tab active" type="button">Chats</button>
+      <button id="tab-settings-btn" class="sidebar-tab" type="button">Settings</button>
     </div>
     <ul id="peer-list"></ul>
     <div id="sidebar-footer">
       <input id="avatar-file" type="file" accept="image/*" hidden>
       <button id="set-avatar-btn">Set avatar…</button>
       <div id="backup-row" hidden>
-        <input id="backup-password" type="password" placeholder="Choose a backup password" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
-        <button id="backup-confirm">Download backup</button>
+        <input id="backup-password" type="password" placeholder="Choose a backup password" class="full-width">
+        <button id="backup-confirm" class="primary">Download backup</button>
         <button id="backup-cancel">Cancel</button>
       </div>
       <button id="backup-btn">Backup…</button>
       <div id="new-group-row" hidden>
-        <input id="new-group-name" placeholder="Group name" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
-        <div id="new-group-members" style="max-height:120px; overflow-y:auto; margin-bottom:4px; font-size:13px; background:#fafafa; border:1px solid #eee; padding:4px;"></div>
-        <button id="new-group-confirm">Create</button>
+        <input id="new-group-name" placeholder="Group name" class="full-width">
+        <div id="new-group-members" class="option-list"></div>
+        <button id="new-group-confirm" class="primary">Create</button>
         <button id="new-group-cancel">Cancel</button>
       </div>
       <button id="new-group-btn">New group…</button>
@@ -264,8 +346,8 @@
       <div class="settings-section">
         <h3>Add a contact</h3>
         <div id="add-contact-row" hidden>
-          <input id="add-contact-input" placeholder="Paste contact card…" style="width:100%; box-sizing:border-box; margin-bottom:4px;">
-          <button id="add-contact-confirm">Add</button>
+          <input id="add-contact-input" placeholder="Paste contact card…" class="full-width">
+          <button id="add-contact-confirm" class="primary">Add</button>
           <button id="add-contact-cancel">Cancel</button>
         </div>
         <button id="add-contact-btn">Add contact…</button>
@@ -273,7 +355,7 @@
       <div class="settings-section">
         <h3>My contact card</h3>
         <div id="my-card-row" hidden>
-          <input id="my-card-display" readonly style="width:100%; box-sizing:border-box; margin-bottom:4px;">
+          <input id="my-card-display" readonly class="full-width">
         </div>
         <button id="my-card-btn">Show my contact card</button>
       </div>
@@ -308,46 +390,46 @@
       <div><span id="safety-number"></span><button id="verify-btn" hidden>Verify…</button></div>
       <div id="typing-indicator" class="hide"><span id="typing-indicator-text"></span> <span class="typing-dots"><span></span><span></span><span></span></span></div>
       <div id="pinned-bar" class="hide"></div>
-      <div id="call-controls" hidden style="margin-top:4px;">
-        <button id="call-voice-btn">📞 Call</button>
-        <button id="call-video-btn">📹 Video call</button>
+      <div id="call-controls" hidden style="margin-top:8px;">
+        <button id="call-voice-btn">Call</button>
+        <button id="call-video-btn">Video Call</button>
       </div>
-      <div id="incoming-call-banner" class="hide" style="margin-top:6px; padding:8px; background:#fff8dc; border:1px solid #e0c860; border-radius:4px;">
-        <span id="incoming-call-text"></span>
-        <button id="incoming-call-accept">Accept</button>
+      <div id="incoming-call-banner" class="hide banner warn">
+        <span id="incoming-call-text"></span><br>
+        <button id="incoming-call-accept" class="primary">Accept</button>
         <button id="incoming-call-reject">Reject</button>
       </div>
-      <div id="active-call-panel" class="hide" style="margin-top:6px; padding:8px; background:#e8f4ea; border:1px solid #8cc99a; border-radius:4px;">
-        <span id="active-call-status"></span>
+      <div id="active-call-panel" class="hide banner ok">
+        <span id="active-call-status"></span><br>
         <button id="call-mute-btn">Mute</button>
-        <button id="call-hangup-btn">Hang up</button>
+        <button id="call-hangup-btn" class="danger">Hang Up</button>
         <div>
-          <img id="local-video-preview" hidden style="max-width:120px; border-radius:4px; margin-top:6px;">
-          <img id="remote-video-display" hidden style="max-width:240px; border-radius:4px; margin-top:6px; margin-left:8px;">
+          <img id="local-video-preview" hidden style="max-width:120px; border-radius:8px; margin-top:6px;">
+          <img id="remote-video-display" hidden style="max-width:240px; border-radius:8px; margin-top:6px; margin-left:8px;">
         </div>
         <div id="call-captions" class="captions-box hide"></div>
       </div>
-      <div id="group-controls" hidden style="margin-top:4px; font-size:13px;">
+      <div id="group-controls" hidden style="margin-top:8px; font-size:13px;">
         <span id="group-members-label"></span>
         <button id="group-add-member-btn" style="margin-left:8px;">Add member…</button>
-        <div id="group-add-member-row" hidden style="margin-top:6px;">
-          <div id="group-add-member-list" style="max-height:120px; overflow-y:auto; margin-bottom:4px; background:#fafafa; border:1px solid #eee; padding:4px;"></div>
-          <button id="group-add-member-confirm">Add</button>
+        <div id="group-add-member-row" hidden style="margin-top:8px;">
+          <div id="group-add-member-list" class="option-list"></div>
+          <button id="group-add-member-confirm" class="primary">Add</button>
           <button id="group-add-member-cancel">Cancel</button>
         </div>
-        <div style="margin-top:6px;">
-          <button id="group-call-voice-btn">📞 Group call</button>
-          <button id="group-call-video-btn">📹 Group video call</button>
+        <div style="margin-top:8px;">
+          <button id="group-call-voice-btn">Group Call</button>
+          <button id="group-call-video-btn">Group Video Call</button>
         </div>
-        <div id="incoming-group-call-banner" class="hide" style="margin-top:6px; padding:8px; background:#fff8dc; border:1px solid #e0c860; border-radius:4px;">
-          <span id="incoming-group-call-text"></span>
-          <button id="incoming-group-call-join">Join</button>
+        <div id="incoming-group-call-banner" class="hide banner warn">
+          <span id="incoming-group-call-text"></span><br>
+          <button id="incoming-group-call-join" class="primary">Join</button>
           <button id="incoming-group-call-dismiss">Dismiss</button>
         </div>
-        <div id="active-group-call-panel" class="hide" style="margin-top:6px; padding:8px; background:#e8f4ea; border:1px solid #8cc99a; border-radius:4px;">
-          <span>Group call in progress</span>
+        <div id="active-group-call-panel" class="hide banner ok">
+          <span>Group call in progress</span><br>
           <button id="group-call-mute-btn">Mute</button>
-          <button id="group-call-leave-btn">Leave call</button>
+          <button id="group-call-leave-btn" class="danger">Leave Call</button>
           <div id="group-call-participants" style="display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;"></div>
           <div id="group-call-captions" class="captions-box hide"></div>
         </div>
@@ -367,12 +449,12 @@
       <button id="reply-preview-cancel" type="button" title="Cancel reply">✕</button>
     </div>
     <div id="entry-row">
-      <button id="emoji-btn" type="button" title="Emoji">😀</button>
+      <button id="emoji-btn" type="button" title="Emoji">Emoji</button>
       <button id="gif-btn" type="button" title="GIF">GIF</button>
-      <button id="attach-btn" type="button" title="Attach a photo, GIF, audio, or video">📎</button>
+      <button id="attach-btn" type="button" title="Attach a photo, GIF, audio, or video">Attach</button>
       <input id="attach-file" type="file" accept="image/*,audio/*,video/*" hidden>
       <input id="message-input" placeholder="Type a message…">
-      <button id="send-btn">Send</button>
+      <button id="send-btn" class="primary">Send</button>
     </div>
   </div>
 </div>
@@ -380,10 +462,25 @@
 <div id="recovery-overlay" class="hide">
   <div id="recovery-box">
     <b>Write down your recovery phrase</b>
-    <p style="font-size:13px;color:#555;">This is the only way back into your account if you forget your
+    <p class="field-hint">This is the only way back into your account if you forget your
     password. It will not be shown again.</p>
     <div id="recovery-phrase"></div>
-    <button id="recovery-ack-btn">I've written it down</button>
+    <button id="recovery-ack-btn" class="primary">I've written it down</button>
+  </div>
+</div>
+
+<!-- Generic confirm/alert modal — replaces window.confirm/alert (see
+     app.js's showConfirm/showAlert). Native dialogs are silently a
+     no-op in an iOS "Add to Home Screen" web app, which is exactly how
+     this app gets used day to day, so relying on them was a real bug,
+     not just a style choice. -->
+<div id="confirm-overlay" class="modal-overlay hide">
+  <div class="modal-box">
+    <p id="confirm-message"></p>
+    <div class="modal-actions">
+      <button id="confirm-cancel-btn" hidden>Cancel</button>
+      <button id="confirm-ok-btn" class="primary">OK</button>
+    </div>
   </div>
 </div>
 
@@ -393,18 +490,18 @@
      older, buggy version of e.g. crypto.js may keep using it from cache
      indefinitely, since this static server sends no explicit cache
      headers telling it not to. -->
-<script src="js/crypto.js?v=22"></script>
-<script src="js/storage.js?v=22"></script>
-<script src="js/network.js?v=22"></script>
-<script src="js/auth.js?v=22"></script>
-<script src="js/backup.js?v=22"></script>
-<script src="js/attachments.js?v=22"></script>
-<script src="js/groups.js?v=22"></script>
-<script src="js/calls.js?v=22"></script>
-<script src="js/groupcalls.js?v=22"></script>
-<script src="js/avatars.js?v=22"></script>
-<script src="js/giphy.js?v=22"></script>
-<script src="js/translation.js?v=22"></script>
-<script src="js/app.js?v=22"></script>
+<script src="js/crypto.js?v=23"></script>
+<script src="js/storage.js?v=23"></script>
+<script src="js/network.js?v=23"></script>
+<script src="js/auth.js?v=23"></script>
+<script src="js/backup.js?v=23"></script>
+<script src="js/attachments.js?v=23"></script>
+<script src="js/groups.js?v=23"></script>
+<script src="js/calls.js?v=23"></script>
+<script src="js/groupcalls.js?v=23"></script>
+<script src="js/avatars.js?v=23"></script>
+<script src="js/giphy.js?v=23"></script>
+<script src="js/translation.js?v=23"></script>
+<script src="js/app.js?v=23"></script>
 </body>
 </html>
