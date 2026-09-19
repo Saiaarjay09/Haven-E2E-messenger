@@ -26,6 +26,10 @@ doesn't have). On-device AI in the browser isn't built yet.
 walkthrough with screenshots (signing up, adding a contact, sending
 your first message).
 
+**Want to understand how the code itself works?** See
+[ARCHITECTURE.md](ARCHITECTURE.md) for a full tour of the repo — the
+overall design, and what every individual file does.
+
 ## Run it (LAN only, no setup)
 
 ```bash
