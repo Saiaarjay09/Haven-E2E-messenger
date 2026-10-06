@@ -9,6 +9,8 @@ name: Deploy web client to GitHub Pages
 # Pages can't run itself (no Python) — so this origin being reachable
 # does NOT by itself mean Haven works with your own machine off; the
 # backend still has to be up. See README.md / CURRENT_LINKS.md.
+#
+# First real deploy: 2026-10-06, once Pages was switched on in Settings.
 on:
   push:
     branches: [main]
