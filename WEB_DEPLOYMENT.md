@@ -326,6 +326,29 @@ clickjacking could actually accomplish. If that gap matters for your
 threat model, keep directing people to the Tailscale-hosted URL instead
 and treat GitHub Pages purely as a fallback.
 
+**A real wrinkle if you're also on the same tailnet as the Mac:**
+`haven.taila6d3cb.ts.net` is only a "public" address to someone who
+ISN'T on this tailnet — Funnel makes it genuinely internet-reachable
+for them, so GitHub Pages → accounts/relay just works, no prompts. But
+if the device opening the GitHub Pages link is itself signed into this
+same Tailscale network (e.g. the Tailscale app on your own phone — the
+exact device you'd install it on to reach this from "away from your
+PC"), that device's own DNS resolves the hostname to its private
+Tailscale address (`100.x.x.x`) instead of routing out through Funnel.
+Chrome (and other Chromium browsers) treat that as a **public page
+reaching a private network address** and require a one-time **"Local
+Network Access"** permission grant — an actual browser permission
+prompt, the same family as camera/microphone/location — before the
+first signup/login request from GitHub Pages will succeed. Decline it
+and every request just fails with "Failed to fetch"; there's no way to
+suppress the prompt from the server side, only to make sure the
+request is eligible to be granted at all (see `accounts_server.py`'s
+`Access-Control-Allow-Private-Network` response header, which is
+required but not sufficient — the permission prompt is Chrome's own
+separate, mandatory gate on top of it). The prompt is normally
+per-origin and sticks after the first "Allow," and Safari/Firefox
+don't currently enforce this policy at all.
+
 ## Keeping it running
 
 - Both `.service` files auto-restart on crash and start on boot.

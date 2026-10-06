@@ -262,6 +262,22 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    # Chrome's Private Network Access: this hostname resolves to a
+    # Tailscale CGNAT address (100.x.x.x) for anyone else also on this
+    # tailnet (MagicDNS answers locally rather than routing through
+    # Funnel's public edge) — Chrome classifies that as a "private"
+    # target and silently blocks a request to it from a "public" origin
+    # like GitHub Pages unless this exact preflight opts in. Funnel
+    # makes this server genuinely internet-reachable for everyone
+    # else, so this isn't really "private" in the way PNA assumes, but
+    # the browser only ever sees the IP it resolved, not that context.
+    # Only granted to origins already trusted by CORS_ORIGINS above —
+    # additive to that check, not a bypass of it.
+    if (
+        request.headers.get("access-control-request-private-network") == "true"
+        and request.headers.get("origin") in CORS_ORIGINS
+    ):
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
     return response
 
 
