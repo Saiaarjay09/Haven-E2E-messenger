@@ -6,7 +6,7 @@ to add a friend, and how to reach me directly.
 
 ## Open Haven
 
-**https://haven.taila6d3cb.ts.net**
+**https://saiaarjay09.github.io/Haven-E2E-messenger/**
 
 Works in any modern browser, desktop or mobile. Nothing to install.
 

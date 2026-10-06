@@ -228,8 +228,17 @@ app = FastAPI(title="Haven Accounts Service")
 # against a visitor's browser (e.g. to enumerate /api/search-users),
 # which restricting to real origins closes off. Self-hosters running
 # this on a different domain should set HAVEN_ACCOUNTS_CORS_ORIGINS
-# (comma-separated) rather than editing this default.
-_DEFAULT_CORS_ORIGINS = "https://haven.taila6d3cb.ts.net,http://localhost:8899,http://127.0.0.1:8899"
+# (comma-separated) rather than editing this default. The github.io
+# origin is GitHub Pages (see .github/workflows/pages.yml) — a second
+# place the SAME static client is served from; it still only ever
+# talks to THIS accounts server and the Tailscale-hosted relay (see
+# app.js's defaultAccountsUrl/defaultRelayWsUrl, which are fixed
+# absolute URLs, not derived from location.*), so this is additive,
+# not a second deployment to separately secure.
+_DEFAULT_CORS_ORIGINS = (
+    "https://haven.taila6d3cb.ts.net,http://localhost:8899,http://127.0.0.1:8899,"
+    "https://saiaarjay09.github.io"
+)
 CORS_ORIGINS = [
     o.strip() for o in os.environ.get("HAVEN_ACCOUNTS_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",") if o.strip()
 ]

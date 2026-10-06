@@ -1,0 +1,42 @@
+name: Deploy web client to GitHub Pages
+
+# Publishes webapp/static/ (the browser client) to GitHub Pages so it's
+# reachable without running webapp/serve_static.py yourself — this is
+# the SAME client, unmodified, that serve_static.py already serves over
+# Tailscale; only the static-file hosting moves, not the app. It still
+# only ever talks to the Tailscale-hosted accounts_server.py/relay_server.py
+# (see app.js's defaultAccountsUrl/defaultRelayWsUrl), which GitHub
+# Pages can't run itself (no Python) — so this origin being reachable
+# does NOT by itself mean Haven works with your own machine off; the
+# backend still has to be up. See README.md / CURRENT_LINKS.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "webapp/static/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: webapp/static
+      - id: deployment
+        uses: actions/deploy-pages@v4

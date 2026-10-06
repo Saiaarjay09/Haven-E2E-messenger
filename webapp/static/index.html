@@ -6,20 +6,40 @@
 <title>Haven</title>
 <meta name="description" content="End-to-end encrypted chat for you and your friends.">
 
+<!-- This page is mirrored at two origins — the Tailscale-hosted
+     static server (webapp/serve_static.py) and GitHub Pages (see
+     .github/workflows/pages.yml) — both serving this SAME file
+     unmodified. Only accounts_server.py/relay_server.py (still
+     Tailscale-only — GitHub Pages can't run Python) differ by origin,
+     and both are referenced by fixed absolute URL below, not
+     location.*, so this file behaves identically wherever it's
+     loaded from. og:url/og:image point at GitHub Pages since that's
+     now the canonical link people are actually given — see README.md. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.giphy.com; media-src 'self' blob:; connect-src 'self' https://haven.taila6d3cb.ts.net:* wss://haven.taila6d3cb.ts.net:* http://localhost:8000 ws://localhost:8444 https://*.giphy.com; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta http-equiv="Referrer-Policy" content="no-referrer">
+<!-- The meta-tag form of CSP can't carry frame-ancestors (the spec
+     excludes it deliberately), and there's no meta-tag equivalent of
+     the X-Frame-Options/Permissions-Policy headers serve_static.py
+     sends for the Tailscale-hosted copy — GitHub Pages serves static
+     files with no custom-header mechanism at all. So this origin is
+     real-value equivalent for encryption/connectivity but has
+     slightly weaker clickjacking/camera-mic hardening than the
+     Tailscale-hosted copy; see WEB_DEPLOYMENT.md. -->
+
 <!-- Link-preview tags: what WhatsApp/iMessage/Slack/etc. show when this
      URL is pasted or shared. og:image needs an absolute URL (not
      relative) since the crawler fetching it isn't this page. -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="Haven">
 <meta property="og:description" content="End-to-end encrypted chat for you and your friends.">
-<meta property="og:url" content="https://haven.taila6d3cb.ts.net">
-<meta property="og:image" content="https://haven.taila6d3cb.ts.net/img/og-banner.png">
+<meta property="og:url" content="https://saiaarjay09.github.io/Haven-E2E-messenger/">
+<meta property="og:image" content="https://saiaarjay09.github.io/Haven-E2E-messenger/img/og-banner.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Haven">
 <meta name="twitter:description" content="End-to-end encrypted chat for you and your friends.">
-<meta name="twitter:image" content="https://haven.taila6d3cb.ts.net/img/og-banner.png">
+<meta name="twitter:image" content="https://saiaarjay09.github.io/Haven-E2E-messenger/img/og-banner.png">
 
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">

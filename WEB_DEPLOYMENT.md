@@ -288,6 +288,44 @@ it. After editing the plist, reload the service:
 launchctl kickstart -k gui/$(id -u)/com.haven.accounts
 ```
 
+## Option D: GitHub Pages for the static front-end (works alongside any of the above)
+
+This only replaces step 3 of the three processes — "serve the HTML/JS"
+— with GitHub's own infrastructure instead of `webapp/serve_static.py`
+running on your machine. The accounts service and relay (steps 1-2)
+still have to be running somewhere reachable regardless; GitHub Pages
+is static-file hosting only and can't run Python. Use this alongside
+whichever of A/B/C you're already running for the backend, not instead
+of it.
+
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) publishes
+`webapp/static/` to GitHub Pages automatically on every push to `main`
+that touches that directory — no manual deploy step. It deploys the
+exact same files `serve_static.py` already serves; `app.js`'s
+`defaultAccountsUrl()`/`defaultRelayWsUrl()` are fixed absolute URLs
+(not derived from `location.*`), so the page works identically no
+matter which origin it was loaded from.
+
+**One-time setup:** in the repo's GitHub Settings → Pages, set
+**Source** to **GitHub Actions** (the workflow handles everything after
+that — first push after enabling it triggers the first deploy). The
+live URL is `https://<username>.github.io/<repo>/`.
+
+**What you lose versus the Tailscale-hosted copy:** GitHub Pages sends
+no custom HTTP response headers at all — no mechanism for it, unlike
+Caddy/nginx or `serve_static.py`'s own Python handler. `index.html`
+carries an equivalent Content-Security-Policy via a `<meta>` tag
+instead, but CSP's `frame-ancestors` directive is explicitly excluded
+from the meta-tag form by spec, and there's no meta-tag equivalent of
+the `X-Frame-Options: DENY` or `Permissions-Policy: camera=(self),
+microphone=(self)` headers `serve_static.py` sends. In practice this
+means the GitHub Pages copy is somewhat more exposed to clickjacking
+(a malicious site framing it in an iframe) than the Tailscale-hosted
+one — real, if the page's encrypted-content-only design limits what
+clickjacking could actually accomplish. If that gap matters for your
+threat model, keep directing people to the Tailscale-hosted URL instead
+and treat GitHub Pages purely as a fallback.
+
 ## Keeping it running
 
 - Both `.service` files auto-restart on crash and start on boot.

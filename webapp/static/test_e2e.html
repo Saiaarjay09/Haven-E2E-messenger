@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Haven web client end-to-end test</title></head>
+<head><meta charset="utf-8"><title>Haven web client end-to-end test</title>
+<!-- GitHub Pages sends no custom headers, so the CSP serve_static.py
+     applies server-side for the Tailscale-hosted copy is replicated
+     here via meta tag instead — see index.html's longer comment. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://haven.taila6d3cb.ts.net:* wss://haven.taila6d3cb.ts.net:* http://localhost:8000 ws://localhost:8444">
+</head>
 <body>
 <pre id="out">running (this takes a few seconds — scrypt is deliberately slow)...</pre>
 <script src="js/crypto.js?v=33"></script>
